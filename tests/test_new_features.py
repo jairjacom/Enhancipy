@@ -97,28 +97,27 @@ class TestBootScreen(unittest.TestCase):
                         await pilot.pause(0.02)
                     self.assertIsInstance(app.screen, BootScreen)
                     art = str(app.screen.query_one("#boot-art").render())
-                    self.assertIn("____", art)
-                    self.assertIn("_//_", art)
+                    self.assertIn("___", art)
+                    self.assertIn("_||_", art)
                     name = str(app.screen.query_one("#boot-name").render())
-                    self.assertIn("Enhancify Rebranded", name)
+                    self.assertIn("EnhanciPy Rebranded", name)
 
-                    # Phase 1: classic "Checking..." infobox (no Build/Release yet)
+                    # Phase 1: classic "Checking..." infobox (no Release yet)
                     info = str(app.screen.query_one("#boot-info").render())
-                    self.assertIn("Modifier     : Graywizard", info)
+                    self.assertIn("Modified by  : jair-00", info)
                     self.assertIn("Last Updated : Checking...", info)
                     self.assertIn("Status       : Checking...", info)
-                    self.assertNotIn("Build Version", info)
+                    self.assertNotIn("Release", info)
 
                     # Phase 2: full classic infobox once checks finish
                     for _ in range(300):
-                        if "Build Version" in str(app.screen.query_one("#boot-info").render()):
+                        if "Status       : Online" in str(app.screen.query_one("#boot-info").render()):
                             break
                         await pilot.pause(0.02)
                     info = str(app.screen.query_one("#boot-info").render())
-                    self.assertIn("Modifier     : Graywizard888", info)
+                    self.assertIn("Modified by  : jair-00", info)
                     self.assertIn("Last Updated :", info)
                     self.assertIn("Status       : Online", info)
-                    self.assertIn("Build Version: Enhanced V2.7.2", info)
                     self.assertIn("Release      :", info)
 
                     # Auto-advance to the main menu
