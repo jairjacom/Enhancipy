@@ -143,6 +143,10 @@ class SettingsScreen(Screen):
             modal = ProgressModal("Auto Upgrade", "Checking for package updates via pkg...")
             self.app.push_screen(modal)
             self.run_auto_upgrade_worker(modal)
+        elif result == "dependencies":
+            modal = ProgressModal("Runtime Dependencies", "Checking bin/aapt2 and bin/APKEditor.jar...")
+            self.app.push_screen(modal)
+            self.run_deps_worker(modal)
 
     def open_features_dialog(self) -> None:
         initial = {key: config.is_on(key) for key, _t, _d in TOGGLE_KEYS}
@@ -238,6 +242,21 @@ class SettingsScreen(Screen):
         self.app.call_from_thread(
             self.app.push_screen,
             MessageDialog("Auto Upgrade Result", msg),
+        )
+
+    @work(thread=True)
+    def run_deps_worker(self, modal: ProgressModal) -> None:
+        from src.deps import deps
+
+        ok, summary = deps.ensure(
+            progress_callback=lambda label, cur, total: modal.update_message(
+                f"Downloading {label}... {int(cur * 100 / total) if total else 0}%"
+            )
+        )
+        self.app.call_from_thread(modal.safe_dismiss)
+        self.app.call_from_thread(
+            self.app.push_screen,
+            MessageDialog("Runtime Dependencies", f"{summary}\n\nLocation: {deps.bin_dir}"),
         )
 
     def action_theme_select(self) -> None:

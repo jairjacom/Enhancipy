@@ -1088,6 +1088,7 @@ class ConfigModulesDialog(ModalScreen[Optional[str]]):
         ("apkmirror", "🌐 APKMirror Scraper Config"),
         ("backup", "📦 Backup Stock Apps"),
         ("auto_upgrade", "🔄 Auto Upgrade"),
+        ("dependencies", "🧩 Runtime Dependencies"),
     ]
 
     def __init__(self, **kwargs):

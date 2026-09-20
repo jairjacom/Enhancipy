@@ -27,6 +27,8 @@ Screen {
 }
 
 #header-title {
+    width: 1fr;
+    text-align: center;
     text-style: bold;
     color: $enh-accent;
 }

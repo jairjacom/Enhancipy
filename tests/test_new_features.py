@@ -481,7 +481,7 @@ class TestConfigureDialogs(unittest.TestCase):
                 self.assertTrue(
                     await _wait_for(lambda: isinstance(app.screen, ConfigModulesDialog), pilot)
                 )
-                self.assertEqual(len(list(app.screen.query("Button"))), 7)  # 6 + Close
+                self.assertEqual(len(list(app.screen.query("Button"))), 8)  # 7 + Close
                 await pilot.click("#btn-close")
                 await pilot.pause(0.1)
 

@@ -109,7 +109,7 @@ class Environment:
                 return match.group(1).strip()
             first_line = content.splitlines()[0].strip() if content.splitlines() else "Unknown"
             return first_line.strip("'\"")
-        return "v6.2.6"
+        return "v1.0.0"
 
     def check_privileges(self, force_root: Optional[bool] = None, force_rish: Optional[bool] = None) -> Tuple[bool, bool, str]:
         """

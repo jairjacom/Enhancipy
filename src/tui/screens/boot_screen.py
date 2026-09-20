@@ -114,6 +114,11 @@ class BootScreen(Screen):
         self._bar_timer = None
         self._phase_timer = None
         self._finish_timer = None
+        self._deps_active = False
+        self._deps_fraction = 0.0
+        self._deps_note: Optional[str] = None
+        self._timer_elapsed = False
+        self._cancel = threading.Event()
 
     # ------------------------------------------------------------- classic texts
 
@@ -159,21 +164,41 @@ class BootScreen(Screen):
         self._bar_timer = self.set_interval(0.05, self._tick)
         if self.boot_seconds > 0:
             self._phase_timer = self.set_timer(self._phase_split, self._maybe_enter_phase_2)
-            self._finish_timer = self.set_timer(self.boot_seconds, self.action_skip)
+            self._finish_timer = self.set_timer(self.boot_seconds, self._timer_done)
         else:
-            self.action_skip()
-        # Background: git last-updated + network status (classic checks).
+            self._timer_done()
+        # Background: git last-updated + network status (classic checks),
+        # then — on first run, when online — the bin/aapt2 + APKEditor.jar
+        # runtime dependency download.
         threading.Thread(target=self._fetch_boot_info, daemon=True).start()
 
     def _tick(self) -> None:
-        elapsed = time.time() - self._start_time
-        frac = min(1.0, elapsed / self.boot_seconds) if self.boot_seconds > 0 else 1.0
+        if self._deps_active:
+            frac = self._deps_fraction
+        else:
+            elapsed = time.time() - self._start_time
+            frac = min(1.0, elapsed / self.boot_seconds) if self.boot_seconds > 0 else 1.0
         try:
             self.query_one("#boot-bar", GradientProgressBar).set_fraction(frac)
         except Exception:
             pass
 
     # --------------------------------------------------------- two-phase logic
+
+    def _info_text(self, last: str, net_status: str) -> str:
+        text = self._phase2_text(last, net_status)
+        if self._deps_note:
+            text += f"\n{self._deps_note}"
+        return text
+
+    def _refresh_info(self) -> None:
+        if self._boot_values is None:
+            return
+        last, net_status = self._boot_values
+        try:
+            self.query_one("#boot-info", Label).update(self._info_text(last, net_status))
+        except Exception:
+            pass
 
     def _fetch_boot_info(self) -> None:
         last = read_last_updated()
@@ -201,6 +226,57 @@ class BootScreen(Screen):
             except Exception:
                 pass
 
+        if os.environ.get("ENHANCIPY_DEP_BOOTSTRAP", "1") == "0":
+            return
+
+        try:
+            from src.deps import deps
+
+            missing = deps.missing()
+            if not missing:
+                return
+
+            if net_status.startswith("Online"):
+                self._deps_active = True
+                self._deps_note = "Dependencies : starting..."
+                try:
+                    self.app.call_from_thread(self._refresh_info)
+                except Exception:
+                    pass
+                ok, _summary = deps.ensure(
+                    progress_callback=self._on_dep_progress,
+                    cancel_event=self._cancel,
+                )
+                self._deps_note = (
+                    "Dependencies : ready"
+                    if ok
+                    else "Dependencies : download failed — Configure \u25b8 Runtime Dependencies"
+                )
+            else:
+                self._deps_note = "Dependencies : offline — open Configure \u25b8 Runtime Dependencies"
+
+            def _dep_done() -> None:
+                self._deps_active = False
+                self._refresh_info()
+                self._maybe_finish()
+
+            try:
+                self.app.call_from_thread(_dep_done)
+            except Exception:
+                _dep_done()
+        except Exception:
+            self._deps_active = False
+
+    def _on_dep_progress(self, label: str, current: int, total: int) -> None:
+        if total > 0:
+            self._deps_fraction = current / total
+        pct = int(current * 100 / total) if total > 0 else 0
+        self._deps_note = f"Dependencies : {label} {pct}%"
+        try:
+            self.app.call_from_thread(self._refresh_info)
+        except Exception:
+            pass
+
     def _maybe_enter_phase_2(self) -> None:
         if self._boot_values is not None:
             self._enter_phase_2()
@@ -212,14 +288,24 @@ class BootScreen(Screen):
         last, net_status = self._boot_values
         try:
             self.query_one("#boot-info", Label).update(
-                self._phase2_text(last, net_status)
+                self._info_text(last, net_status)
             )
         except Exception:
             pass
 
     # ------------------------------------------------------------------- finish
 
+    def _timer_done(self) -> None:
+        self._timer_elapsed = True
+        self._maybe_finish()
+
+    def _maybe_finish(self) -> None:
+        if self._timer_elapsed and not self._deps_active:
+            self._finish()
+
     def action_skip(self) -> None:
+        self._cancel.set()
+        self._deps_active = False
         self._finish()
 
     def _finish(self) -> None:

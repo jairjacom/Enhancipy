@@ -39,8 +39,12 @@ class CyberHeader(Widget):
     def compose(self) -> ComposeResult:
         pal = palette()
         with Vertical(id="cyber-header"):
-            # ASCII / Stylized title
-            title_text = Text("⚡ E N H A N C I F Y ⚡", style="bold " + pal["accent"])
+            title_text = Text()
+            title_text.append("·· ", style=pal["accent_2"])
+            title_text.append("EnhanciPy", style="bold " + pal["accent"])
+            title_text.append(" - ", style=pal["border"])
+            title_text.append("modded by jair-00", style=pal["text"])
+            title_text.append(" ··", style=pal["accent_2"])
             yield Label(title_text, id="header-title")
 
             source_name = config.get("SOURCE", "Anddea")

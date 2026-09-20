@@ -41,8 +41,8 @@ TCSS_PATH = Path(__file__).resolve().parent / "styles.tcss"
 class EnhancifyApp(App):
     """Main Textual Application for Enhancify."""
 
-    TITLE = "Enhancify"
-    SUB_TITLE = "The Ultimate Custom Patching Experience"
+    TITLE = "EnhanciPy"
+    SUB_TITLE = "modded by jair-00"
     CSS_PATH = TCSS_PATH
 
     # Default AUTO_FOCUS ("*") lands on the first focusable widget in DOM

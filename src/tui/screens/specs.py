@@ -1,8 +1,9 @@
 """
 Enhancify System Specifications & Release Changelog Screen
-Displays hardware and Android OS specs along with Enhancify GitHub release changelogs.
+Displays hardware and Android OS specs along with EnhanciPy GitHub release changelogs.
 """
 
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -19,6 +20,33 @@ from src.environment import env
 from src.tui.widgets.dialogs import ProgressModal
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
+
+WORKSPACE = Path(__file__).resolve().parent.parent.parent.parent  # repo root
+
+
+def bundled_changelog(version: str) -> str:
+    """Section of CHANGELOG.md for `version`, else the whole file, else a notice."""
+    changelog_path = WORKSPACE / "CHANGELOG.md"
+    try:
+        text = changelog_path.read_text(encoding="utf-8")
+    except Exception:
+        return "Changelog not available for this release."
+
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.startswith("## ") and version in line:
+            start = i
+            break
+    if start is None:
+        return text
+
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].startswith("## "):
+            end = i
+            break
+    return "\n".join(lines[start:end]).strip()
 
 
 class SpecsScreen(Screen):
@@ -73,15 +101,15 @@ class SpecsScreen(Screen):
     @work(thread=True)
     def fetch_changelog(self) -> None:
         version = env.get_version()
-        repo = "Graywizard888/Enhancify"
+        repo = "jairjacom/Enhancipy"
         url = f"https://api.github.com/repos/{repo}/releases/tags/{version}"
-        headers = {"User-Agent": "Enhancify"}
+        headers = {"User-Agent": "EnhanciPy"}
 
         tok = config.get_github_token()
         if tok:
             headers["Authorization"] = f"Bearer {tok}"
 
-        changelog_text = "Changelog not available for this release."
+        changelog_text = None
         try:
             r = requests.get(url, headers=headers, timeout=5)
             if r.status_code == 200:
@@ -91,6 +119,9 @@ class SpecsScreen(Screen):
                     changelog_text = body
         except Exception:
             pass
+
+        if not changelog_text:
+            changelog_text = bundled_changelog(version)
 
         def update_ui():
             try:
