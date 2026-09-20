@@ -380,6 +380,7 @@ def run_command(
     cwd: Optional[Path] = None,
     timeout: Optional[int] = None,
     log_file: Optional[Path] = None,
+    env: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, str]:
     """Execute a system command and return (returncode, stdout, stderr)."""
     try:
@@ -389,6 +390,7 @@ def run_command(
             capture_output=True,
             text=True,
             timeout=timeout,
+            env={**os.environ, **env} if env else None,
         )
         if log_file and proc.stdout:
             with open(log_file, "a", encoding="utf-8") as f:

@@ -40,7 +40,8 @@ CURRENT_USER=$(rish -c "am get-current-user" 2>/dev/null | tr -d '\r\n' | xargs)
 CURRENT_USER=${CURRENT_USER:-0}
 log "Current user: $CURRENT_USER"
 
-CONFIG_FILE="$HOME/Enhancify/.config"
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+CONFIG_FILE="${ENHANCIFY_CONFIG_FILE:-$SCRIPT_DIR/../.config}"
 SKIP_VERIFICATION="off"
 BYPASS_LOW_TARGET_SDK_BLOCK="off"
 

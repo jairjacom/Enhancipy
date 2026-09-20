@@ -279,7 +279,7 @@ class AppInstaller:
                 install_error_file.unlink(missing_ok=True)
 
                 cmd = ["bash", str(rish_script), pkg_name, app_name, exported_name, str(self.storage_dir)]
-                code, out, err = run_command(cmd, timeout=60)
+                code, out, err = run_command(cmd, timeout=60, env={"ENHANCIFY_CONFIG_FILE": str(config.config_file)})
                 if code == 0:
                     install_type = "new"
                     install_type_file = self.storage_dir / "install_type.txt"
