@@ -12,7 +12,7 @@ from textual.screen import Screen
 
 from src.config import config
 from src.environment import env
-from src.theme import THEME_MAP, THEMES, get_current_theme
+from src.theme import THEME_MAP, css_variables, get_current_theme
 from src.tui.screens.app_select import AppSelectScreen
 from src.tui.screens.boot_screen import BootScreen
 from src.tui.screens.bundle_patcher import BundlePatcherScreen
@@ -42,7 +42,7 @@ class EnhancifyApp(App):
     """Main Textual Application for Enhancify."""
 
     TITLE = "Enhancify"
-    SUB_TITLE = "The Ultimate Custom Revancify Experience"
+    SUB_TITLE = "The Ultimate Custom Patching Experience"
     CSS_PATH = TCSS_PATH
 
     # Default AUTO_FOCUS ("*") lands on the first focusable widget in DOM
@@ -58,6 +58,10 @@ class EnhancifyApp(App):
         Binding("right", "focus_next_widget", show=False),
         Binding("up", "focus_previous_widget", show=False),
         Binding("left", "focus_previous_widget", show=False),
+        Binding("pageup", "scroll_container_up", show=False),
+        Binding("pagedown", "scroll_container_down", show=False),
+        Binding("home", "scroll_container_home", show=False),
+        Binding("end", "scroll_container_end", show=False),
     ]
 
     SCREENS = {
@@ -98,11 +102,17 @@ class EnhancifyApp(App):
         return super().get_screen(screen, screen_class)
 
     def __init__(self, force_root: Optional[bool] = None, force_rish: Optional[bool] = None, **kwargs):
+        self._theme_id: str = get_current_theme().id
         super().__init__(**kwargs)
         self.force_root = force_root
         self.force_rish = force_rish
         self.selected_app: Dict[str, Any] = {}
         self.multi_sources: List[str] = [config.get("SOURCE", "Anddea")]
+
+    def get_css_variables(self) -> Dict[str, str]:
+        """Inject the active theme's tokens as `$enh-*` CSS variables so the
+        stylesheet re-resolves them on `refresh_css()` — see apply_theme()."""
+        return {**super().get_css_variables(), **css_variables(THEME_MAP.get(self._theme_id))}
 
     def on_mount(self) -> None:
         """Apply active theme and start with the 'Enhancify Rebranded' boot screen."""
@@ -143,13 +153,47 @@ class EnhancifyApp(App):
             widget.scroll_visible(top=True, animate=False)
 
     def apply_theme(self, theme_id: str) -> None:
-        """Dynamically add theme CSS class to App."""
-        # Remove all existing theme classes
-        for th in THEMES:
-            self.remove_class(th.css_class)
+        """Switch the active theme's `$enh-*` token values and re-resolve the
+        stylesheet live. `refresh_css` alone updates CSS-declared colors but
+        leaves already-rendered `$enh-*` markup (Static/Label content) with
+        its old resolved color baked into the render cache, so every mounted
+        widget also needs an explicit refresh."""
+        self._theme_id = theme_id if theme_id in THEME_MAP else "cyber_green"
+        self.refresh_css(animate=False)
+        for screen in self.screen_stack:
+            for widget in screen.walk_children():
+                widget.refresh()
+            screen.refresh()
 
-        if theme_id in THEME_MAP:
-            target_class = THEME_MAP[theme_id].css_class
-            self.add_class(target_class)
-        else:
-            self.add_class("theme-cyber-green")
+    def _focused_scroller(self):
+        """Nearest scrollable ancestor of the focused widget, falling back to
+        the current screen's outer scroll container."""
+        widget = self.focused
+        if widget is not None:
+            for ancestor in [widget, *widget.ancestors]:
+                if getattr(ancestor, "is_scrollable", False):
+                    return ancestor
+        try:
+            return self.screen.query_one(".container-box")
+        except Exception:
+            return None
+
+    def action_scroll_container_up(self) -> None:
+        scroller = self._focused_scroller()
+        if scroller is not None:
+            scroller.scroll_page_up(animate=False)
+
+    def action_scroll_container_down(self) -> None:
+        scroller = self._focused_scroller()
+        if scroller is not None:
+            scroller.scroll_page_down(animate=False)
+
+    def action_scroll_container_home(self) -> None:
+        scroller = self._focused_scroller()
+        if scroller is not None:
+            scroller.scroll_home(animate=False)
+
+    def action_scroll_container_end(self) -> None:
+        scroller = self._focused_scroller()
+        if scroller is not None:
+            scroller.scroll_end(animate=False)
