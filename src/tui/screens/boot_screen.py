@@ -1,12 +1,11 @@
 """
-Enhancify Rebranded Boot Screen
+EnhanciPy Rebranded Boot Screen
 Replicates the classic bash boot sequence (modules/constants.sh):
 
     dialog --infobox "<ENHANCIFY_ART>
-        Modifier     : Graywizard888
+        Modified by  : jair-00
         Last Updated : <git date>
         Status       : <online status>
-        Build Version: Enhanced V2.7.2
         Release      : <version>"
 
 Shown on app start; auto-advances to the main menu (ESC to skip).
@@ -30,18 +29,17 @@ from textual.widgets import Label
 from src.environment import env
 from src.tui.widgets.gradient import GradientProgressBar
 
-# Exact ASCII art from modules/constants.sh
+# EnhanciPy wordmark, "small" figlet font, padded to 40 cols (fits 40x25 portrait).
 ENHANCIFY_ART = (
-    "   ____     __                 _ ___    \n"
-    "  / __/__  / /  ___ ____  ____(_) _/_ __\n"
-    " / _// _ \\/ _ \\/ _ `/ _ \\/ __/ / _/ // /\n"
-    "/___/_//_/_//_/\\_,_/_//_/\\__/_/_/ \\_, / \n"
-    "                                 /___/  "
+    " ___      _                 _ ___       \n"
+    "| __|_ _ | |_  __ _ _ _  __(_) _ \\_  _  \n"
+    "| _|| ' \\| ' \\/ _` | ' \\/ _| |  _/ || | \n"
+    "|___|_||_|_||_\\__,_|_||_\\__|_|_|  \\_, | \n"
+    "                                  |__/  "
 )
 
-MODIFIER = "Graywizard888"
-MODIFIER_PHASE1 = "Graywizard"  # classic phase-1 infobox uses the short name
-BUILD_VERSION = "Enhanced V2.7.2"
+MODIFIER = "jair-00"
+MODIFIER_PHASE1 = "jair-00"  # classic phase-1 infobox uses the short name
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -85,15 +83,14 @@ def read_last_updated() -> str:
 
 
 class BootScreen(Screen):
-    """'Enhancify Rebranded' splash — auto-advances to the main menu.
+    """'EnhanciPy Rebranded' splash — auto-advances to the main menu.
 
     Two phases, exactly like the classic constants.sh infoboxes:
 
     phase 1 (first half):        phase 2 (second half):
-    Modifier     : Graywizard    Modifier     : Graywizard888
+    Modified by  : jair-00       Modified by  : jair-00
     Last Updated : Checking...   Last Updated : <git date>
     Status       : Checking...   Status       : <online status>
-                                  Build Version: Enhanced V2.7.2
                                   Release      : <version>
     """
 
@@ -124,7 +121,7 @@ class BootScreen(Screen):
     def _phase1_text() -> str:
         """Classic first infobox (constants.sh, verbatim)."""
         return (
-            f"Modifier     : {MODIFIER_PHASE1}\n"
+            f"Modified by  : {MODIFIER_PHASE1}\n"
             "Last Updated : Checking...\n"
             "Status       : Checking..."
         )
@@ -133,10 +130,9 @@ class BootScreen(Screen):
     def _phase2_text(last_updated: str, net_status: str) -> str:
         """Classic second infobox (constants.sh, verbatim)."""
         return (
-            f"Modifier     : {MODIFIER}\n"
+            f"Modified by  : {MODIFIER}\n"
             f"Last Updated : {last_updated}\n"
             f"Status       : {net_status}\n"
-            f"Build Version: {BUILD_VERSION}\n"
             f"Release      : {read_build_version()}"
         )
 
@@ -147,11 +143,11 @@ class BootScreen(Screen):
         # while the checks run in the background.
         with Vertical(id="boot-screen"):
             yield Label(ENHANCIFY_ART, id="boot-art")
-            yield Label("⚡ E N H A N C I F Y ⚡", id="boot-brand")
-            yield Label("Enhancify Rebranded", id="boot-name")
+            yield Label("⚡ E N H A N C I P Y ⚡", id="boot-brand")
+            yield Label("EnhanciPy Rebranded", id="boot-name")
             yield Label(self._phase1_text(), id="boot-info")
             yield GradientProgressBar(id="boot-bar", show_percentage=False)
-            yield Label("Booting...   [ESC] to skip", id="boot-hint")
+            yield Label("Booting... [ESC] to skip", id="boot-hint")
 
     def on_mount(self) -> None:
         self._start_time = time.time()

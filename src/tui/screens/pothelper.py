@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from src.tui.widgets.content_container import ContentContainer
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Label
@@ -44,7 +44,7 @@ class PotHelperScreen(Screen):
 
         with ContentContainer(classes="container-box"):
             with Vertical(classes="card"):
-                yield Label("🛠️  Fetch PotHelper", classes="card-title")
+                yield Label("🛠️ Fetch PotHelper", classes="card-title")
                 yield Label(
                     "Download the latest PotHelper APK (MorpheApp/PotHelper).\n"
                     "Saved to: Internal Storage/Enhancify/Dependencies/",
@@ -58,14 +58,14 @@ class PotHelperScreen(Screen):
                         classes="btn-primary",
                     )
                     yield Button(
-                        "⚡ Download APK  [D]",
+                        "⚡ Download APK [D]",
                         id="btn-download",
                         classes="btn-primary",
                         disabled=True,
                     )
                     yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-            with Vertical(classes="card"):
+            with VerticalScroll(classes="card detail-card"):
                 yield Label("📋 Release Changelog", classes="card-title")
                 yield Label(
                     "Tap 'Fetch Release Info' to load the latest PotHelper release.",
@@ -100,7 +100,7 @@ class PotHelperScreen(Screen):
                 MessageDialog(
                     "Error",
                     "Failed to fetch PotHelper release info!\n"
-                    "Check network / GitHub rate limits and retry.",
+                    "Check your network and GitHub rate limits, then retry.",
                 ),
             )
             return

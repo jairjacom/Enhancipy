@@ -26,6 +26,7 @@ from src.apkmirror import apkmirror_scraper
 from src.assets import AssetReleaseInfo, assets_mgr
 from src.config import config
 from src.environment import env
+from src.theme import palette
 from src.tui.screens.file_picker import FilePickerScreen
 from src.tui.widgets.dialogs import (
     ChangelogDialog,
@@ -46,7 +47,7 @@ class AppSelectScreen(Screen):
     """App selection screen with live search."""
 
     BINDINGS = [
-        ("i", "import_file", "Import APK"),
+        ("i", "import_file", "Import File"),
         ("r", "refresh", "Refresh Apps"),
         ("b", "back", "Back"),
         ("escape", "back", "Back"),
@@ -252,7 +253,7 @@ class AppSelectScreen(Screen):
                 MessageDialog(
                     "Download Failed",
                     "Unable to download CLI / Patches completely.\n\n"
-                    "Retry or change your Network.",
+                    "Check your network and GitHub rate limits, then retry.",
                 ),
             )
             return
@@ -414,11 +415,12 @@ class AppSelectScreen(Screen):
             apps_list.append(ListItem(Label(Text("No matching applications found.", style="dim"))))
             return
 
+        pal = palette()
         for idx, a in enumerate(self.filtered_apps):
             txt = Text()
-            txt.append("📱 ", style="bold #00ff7f")
-            txt.append(f"{a['appName']:<22}", style="bold #ffffff")
-            txt.append(f" [{a['pkgName']}] ", style="#8b949e")
+            txt.append("📱 ", style=f"bold {pal['accent']}")
+            txt.append(f"{a['appName']:<22}", style=f"bold {pal['text']}")
+            txt.append(f" [{a['pkgName']}] ", style=pal["muted"])
 
             item = ListItem(Label(txt))
             item.app_idx = idx

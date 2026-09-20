@@ -17,6 +17,7 @@ from src.environment import env
 from src.tui.widgets.dialogs import ConfirmDialog, MessageDialog
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
+from src.theme import palette
 from src.utils import run_command
 
 
@@ -60,11 +61,12 @@ class UnmountScreen(Screen):
             m_list.append(ListItem(Label(Text("No mounted applications found in /data/local/tmp/enhancify.", style="dim"))))
             return
 
+        pal = palette()
         for idx, pkg in enumerate(mounted_pkgs):
             txt = Text()
-            txt.append("🔒 ", style="bold #ff4444")
-            txt.append(f"{pkg:<30}", style="bold #ffffff")
-            txt.append(" [Mounted]", style="#00ff7f")
+            txt.append("🔒 ", style=f"bold {pal['danger']}")
+            txt.append(f"{pkg:<30}", style=f"bold {pal['text']}")
+            txt.append(" [Mounted]", style=pal["accent"])
 
             item = ListItem(Label(txt))
             item.pkg_name = pkg

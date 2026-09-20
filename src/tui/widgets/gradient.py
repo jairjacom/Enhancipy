@@ -11,6 +11,8 @@ from rich.text import Text
 from textual.reactive import reactive
 from textual.widget import Widget
 
+from src.theme import palette
+
 
 def _hex_to_rgb(h: str) -> Tuple[int, int, int]:
     h = h.lstrip("#")
@@ -38,7 +40,7 @@ def lerp_color(c1: str, c2: str, t: float) -> str:
 def multi_lerp(stops: List[str], t: float) -> str:
     """Interpolate across multiple color stops."""
     if not stops:
-        return "#00ff7f"
+        return palette()["accent"]
     if len(stops) == 1 or t <= 0:
         return stops[0]
     if t >= 1:
@@ -49,10 +51,16 @@ def multi_lerp(stops: List[str], t: float) -> str:
     return lerp_color(stops[idx], stops[idx + 1], local)
 
 
-# Default cyber-green gradient (theme can override via widget props)
-DEFAULT_GRADIENT = ["#00ff7f", "#00e5ff", "#7c4dff"]
+# Neutral track shade is intentionally theme-independent; gradient stops are
+# resolved per widget instance at construction time (a module-level constant
+# would freeze whichever theme happened to be active at import).
 DEFAULT_TRACK = "#1a2332"
-DEFAULT_SPINNER_STOPS = ["#00ff7f", "#00e5ff", "#ff007f", "#7c4dff", "#00ff7f"]
+
+
+def default_gradient() -> List[str]:
+    """Theme-accented gradient stops (accent → accent_2 → tag)."""
+    pal = palette()
+    return [pal["accent"], pal["accent_2"], pal["tag"]]
 
 
 class GradientProgressBar(Widget):
@@ -79,7 +87,7 @@ class GradientProgressBar(Widget):
         classes: Optional[str] = None,
     ):
         super().__init__(id=id, classes=classes)
-        self.gradient = list(gradient or DEFAULT_GRADIENT)
+        self.gradient = list(gradient or default_gradient())
         self.track_color = track_color
         self.show_percentage = show_percentage
 
@@ -110,7 +118,7 @@ class GradientProgressBar(Widget):
 
         if self.show_percentage:
             pct = int(round(self.progress * 100))
-            out.append(f" {pct:3d}%", style=Style(color="#c9d1d9", bold=True))
+            out.append(f" {pct:3d}%", style=Style(color=palette()["muted"], bold=True))
         return out
 
 
@@ -142,7 +150,7 @@ class GradientSpinner(Widget):
     ):
         super().__init__(id=id, classes=classes)
         self.label = label
-        self.gradient = list(gradient or DEFAULT_SPINNER_STOPS)
+        self.gradient = list(gradient or default_gradient())
         self._timer = None
 
     def on_mount(self) -> None:
@@ -172,5 +180,5 @@ class GradientSpinner(Widget):
 
         if self.label:
             out.append("  ")
-            out.append(self.label, style=Style(color="#c9d1d9"))
+            out.append(self.label, style=Style(color=palette()["muted"]))
         return out

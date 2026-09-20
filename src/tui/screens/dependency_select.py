@@ -17,8 +17,8 @@ class DependencySelectScreen(Screen):
     """Top-level dependency picker (GmsCore / PotHelper)."""
 
     BINDINGS = [
-        ("g", "gmscore", "GmsCore"),
-        ("h", "pothelper", "PotHelper"),
+        ("g", "gmscore", "Fetch GmsCore"),
+        ("h", "pothelper", "Fetch PotHelper"),
         ("b", "back", "Back"),
         ("escape", "back", "Back"),
     ]
@@ -39,12 +39,12 @@ class DependencySelectScreen(Screen):
 
                 with Vertical():
                     yield Button(
-                        "📱 Fetch GmsCore (MicroG)  [G]",
+                        "📱 Fetch GmsCore (MicroG) [G]",
                         id="btn-fetch-gmscore",
                         classes="btn-primary",
                     )
                     yield Button(
-                        "🛠️  Fetch PotHelper  [H]",
+                        "🛠️ Fetch PotHelper [H]",
                         id="btn-fetch-pothelper",
                     )
                     yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")

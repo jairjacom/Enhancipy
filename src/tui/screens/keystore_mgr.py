@@ -16,6 +16,7 @@ from textual.widgets import Button, Footer, Label, ListItem, ListView
 
 from src.environment import env
 from src.features import keystore_mgr
+from src.theme import palette
 from src.tui.screens.file_picker import FilePickerScreen
 from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog
 from src.tui.widgets.header import CyberHeader
@@ -27,8 +28,8 @@ class KeystoreManagerScreen(Screen):
 
     BINDINGS = [
         ("g", "generate", "Generate Keystore"),
-        ("i", "import", "Import Keystore"),
-        ("d", "delete", "Delete Keystore"),
+        ("i", "import", "Import File"),
+        ("d", "delete", "Delete All"),
         ("b", "back", "Back"),
         ("escape", "back", "Back"),
     ]
@@ -64,19 +65,20 @@ class KeystoreManagerScreen(Screen):
 
         ks_list = keystore_mgr.get_keystores_list()
         if not ks_list:
-            k_list.append(ListItem(Label(Text("No custom keystore configured. Click 'Generate' or 'Import' above.", style="dim"))))
+            k_list.append(ListItem(Label(Text("No custom keystore configured. Use Generate Keystore or Import File above.", style="dim"))))
             return
 
+        pal = palette()
         for idx, ks in enumerate(ks_list):
             fname = ks.get("filename", "keystore")
             alias = ks.get("alias", "")
             ks_type = ks.get("keystore_type", "PKCS12")
 
             txt = Text()
-            txt.append("🔑 ", style="bold #ffd700")
-            txt.append(f"{fname:<25}", style="bold #ffffff")
-            txt.append(f" [Type: {ks_type}]", style="#00e5ff")
-            txt.append(f" (Alias: {alias})", style="#00ff7f")
+            txt.append("🔑 ", style=f"bold {pal['warning']}")
+            txt.append(f"{fname:<25}", style=f"bold {pal['text']}")
+            txt.append(f" [Type: {ks_type}]", style=pal['accent_2'])
+            txt.append(f" (Alias: {alias})", style=pal['accent'])
 
             item = ListItem(Label(txt))
             item.ks_idx = idx

@@ -99,8 +99,8 @@ class SettingsScreen(Screen):
             feat_on = sum(1 for key, _t, _d in TOGGLE_KEYS if config.is_on(key))
             flag_on = sum(1 for key, _t, _d in RISH_FLAGS if config.is_on(key))
             self.query_one("#state-summary", Label).update(
-                f"Feature & Optimization: [bold #00ff7f]{feat_on}[/] ON / {len(TOGGLE_KEYS)}    ·    "
-                f"Rish Flags: [bold #00ff7f]{flag_on}[/] ON / {len(RISH_FLAGS)}"
+                f"Feature & Optimization: [bold $enh-accent]{feat_on}[/] ON / {len(TOGGLE_KEYS)}  ·  "
+                f"Rish Flags: [bold $enh-accent]{flag_on}[/] ON / {len(RISH_FLAGS)}"
             )
         except Exception:
             pass
@@ -112,7 +112,7 @@ class SettingsScreen(Screen):
         dlg = AppearanceDialog(
             theme_name=cur_theme.name,
             theme_description=cur_theme.description,
-            theme_color=cur_theme.primary_color,
+            theme_color=cur_theme.accent,
         )
         self.app.push_screen(dlg, self._on_appearance_result)
 

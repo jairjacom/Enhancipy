@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from src.tui.widgets.content_container import ContentContainer
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Label, ListItem, ListView
@@ -21,6 +21,7 @@ from src.features import GMSCORE_PROVIDERS, GmsCoreProvider, gmscore_mgr
 from src.tui.widgets.dialogs import DownloadProgressModal, MessageDialog, ProgressModal
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
+from src.theme import palette
 from src.utils import DownloadResult, format_size
 
 
@@ -28,6 +29,7 @@ class GmsCoreScreen(Screen):
     """GmsCore MicroG provider selection & downloader screen."""
 
     BINDINGS = [
+        ("d", "download", "Download"),
         ("b", "back", "Back"),
         ("escape", "back", "Back"),
     ]
@@ -54,7 +56,7 @@ class GmsCoreScreen(Screen):
 
                 with ButtonBar():
                     yield Button(
-                        "⚡ Download Selected APK",
+                        "⚡ Download Selected APK [D]",
                         id="btn-download",
                         classes="btn-primary",
                         disabled=True,
@@ -63,7 +65,7 @@ class GmsCoreScreen(Screen):
 
                 yield ListView(id="gmscore-list")
 
-            with Vertical(classes="card"):
+            with VerticalScroll(classes="card detail-card"):
                 yield Label("📋 Release Changelog", classes="card-title")
                 yield Label(
                     "Select a provider above to load its release details.",
@@ -81,11 +83,12 @@ class GmsCoreScreen(Screen):
         g_list = self.query_one("#gmscore-list", ListView)
         g_list.clear()
 
+        pal = palette()
         for idx, p in enumerate(GMSCORE_PROVIDERS):
             txt = Text()
-            txt.append("📦 ", style="bold #00ff7f")
-            txt.append(f"{p.name:<25}", style="bold #ffffff")
-            txt.append(f" ({p.repo})", style="#00e5ff")
+            txt.append("📦 ", style=f"bold {pal['accent']}")
+            txt.append(f"{p.name:<25}", style=f"bold {pal['text']}")
+            txt.append(f" ({p.repo})", style=pal["accent_2"])
 
             item = ListItem(Label(txt))
             item.prov_idx = idx
@@ -117,7 +120,7 @@ class GmsCoreScreen(Screen):
                 MessageDialog(
                     "Error",
                     f"Failed to fetch release info for {provider.name}!\n"
-                    "Check network / GitHub rate limits and retry.",
+                    "Check your network and GitHub rate limits, then retry.",
                 ),
             )
             return
@@ -231,6 +234,9 @@ class GmsCoreScreen(Screen):
                 self.app.push_screen,
                 MessageDialog("Error", f"Error during download: {e}"),
             )
+
+    def action_download(self) -> None:
+        self.download_selected_gmscore()
 
     def action_back(self) -> None:
         self.app.pop_screen()

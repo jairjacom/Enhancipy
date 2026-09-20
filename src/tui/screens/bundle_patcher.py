@@ -20,6 +20,7 @@ from src.tui.screens.file_picker import FilePickerScreen
 from src.tui.widgets.dialogs import InputDialog, MessageDialog
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
+from src.theme import palette
 
 
 class BundlePatcherScreen(Screen):
@@ -27,7 +28,7 @@ class BundlePatcherScreen(Screen):
 
     BINDINGS = [
         ("u", "import_url", "Import URL"),
-        ("f", "import_file", "Import File"),
+        ("f", "import_file", "Import JSON File"),
         ("b", "back", "Back"),
         ("escape", "back", "Back"),
     ]
@@ -61,14 +62,15 @@ class BundlePatcherScreen(Screen):
 
         sources = bundle_mgr.get_bundle_sources()
         if not sources:
-            b_list.append(ListItem(Label(Text("No saved bundle sources. Click 'Import from URL' above.", style="dim"))))
+            b_list.append(ListItem(Label(Text("No saved bundle sources. Use Import from URL above.", style="dim"))))
             return
 
+        pal = palette()
         for name, url in sources.items():
             txt = Text()
-            txt.append("📦 ", style="bold #00ff7f")
-            txt.append(f"{name:<20}", style="bold #ffffff")
-            txt.append(f" ({url})", style="#00e5ff")
+            txt.append("📦 ", style=f"bold {pal['accent']}")
+            txt.append(f"{name:<20}", style=f"bold {pal['text']}")
+            txt.append(f" ({url})", style=pal["accent_2"])
 
             item = ListItem(Label(txt))
             item.bundle_name = name

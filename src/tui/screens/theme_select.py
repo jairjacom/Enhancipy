@@ -11,7 +11,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Footer, Label, ListItem, ListView
 
 from src.environment import env
-from src.theme import THEMES, get_current_theme, set_current_theme
+from src.theme import THEMES, get_current_theme, palette, set_current_theme
 from src.tui.widgets.dialogs import MessageDialog
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
@@ -35,8 +35,8 @@ class ThemeSelectScreen(Screen):
 
         with ContentContainer(classes="container-box"):
             with Vertical(classes="card list-card"):
-                yield Label("🎨 Personalize Enhancify Theme", classes="card-title")
-                yield Label(f"Current Theme: [bold {cur_theme.primary_color}]{cur_theme.name}[/]", id="active-theme-label", classes="card-desc")
+                yield Label("🎨 Personalize EnhanciPy Theme", classes="card-title")
+                yield Label(f"Current Theme: [bold {cur_theme.accent}]{cur_theme.name}[/]", id="active-theme-label", classes="card-desc")
 
                 with ButtonBar():
                     yield Button("🔙 Back to Settings [B]", id="btn-back", classes="btn-secondary")
@@ -53,13 +53,14 @@ class ThemeSelectScreen(Screen):
         t_list.clear()
 
         cur_theme = get_current_theme()
+        pal = palette()
 
         for idx, th in enumerate(THEMES):
             is_active = (th.id == cur_theme.id)
 
             txt = Text()
             if is_active:
-                txt.append("● ", style=f"bold {th.primary_color}")
+                txt.append("● ", style=f"bold {th.accent}")
             else:
                 txt.append("○ ", style="dim")
 
@@ -67,8 +68,8 @@ class ThemeSelectScreen(Screen):
             for color in th.preview_palette:
                 txt.append("■ ", style=f"bold {color}")
 
-            txt.append(f" {th.name:<22}", style=f"bold {th.primary_color}" if is_active else "bold #ffffff")
-            txt.append(f" — {th.description}", style="#8b949e")
+            txt.append(f" {th.name:<22}", style=f"bold {th.accent}" if is_active else f"bold {pal['text']}")
+            txt.append(f" — {th.description}", style=pal['muted'])
 
             item = ListItem(Label(txt))
             item.theme_id = th.id
@@ -88,7 +89,7 @@ class ThemeSelectScreen(Screen):
             cur_theme = get_current_theme()
             try:
                 self.query_one("#active-theme-label", Label).update(
-                    f"Current Theme: [bold {cur_theme.primary_color}]{cur_theme.name}[/]"
+                    f"Current Theme: [bold {cur_theme.accent}]{cur_theme.name}[/]"
                 )
             except Exception:
                 pass

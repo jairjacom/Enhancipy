@@ -22,13 +22,13 @@ class MainMenuScreen(Screen):
     BINDINGS = [
         ("p", "patch_app", "Patch App"),
         ("s", "change_source", "Change Source"),
-        ("t", "themes", "Themes"),
+        ("t", "themes", "UI Themes"),
         ("b", "bundle_patcher", "Bundle Patcher"),
-        ("c", "settings", "Settings"),
+        ("c", "settings", "Configure & Settings"),
         ("g", "fetch_dependency", "Fetch Dependency"),
-        ("d", "storage", "Storage"),
-        ("i", "specs", "Specs"),
-        ("q", "quit", "Exit"),
+        ("d", "storage", "Storage Manager"),
+        ("i", "specs", "Specs & Changelog"),
+        ("q", "quit", "Exit EnhanciPy"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -46,19 +46,19 @@ class MainMenuScreen(Screen):
                 yield Label("Select an action below or use keyboard shortcuts:", classes="card-desc")
 
                 with Vertical():
-                    yield Button("🚀 Patch App  [P]", id="btn-patch", classes="btn-primary")
-                    yield Button("📝 Change Source  [S]", id="btn-source")
-                    yield Button("🎨 UI Themes  [T]", id="btn-themes")
-                    yield Button("📦 Bundle Patcher (Experimental)  [B]", id="btn-bundle")
-                    yield Button("⚙️  Configure & Settings  [C]", id="btn-settings")
-                    yield Button("🔌 Fetch Dependency  [G]", id="btn-dependency")
-                    yield Button("🗑️  Storage Manager  [D]", id="btn-storage")
-                    yield Button("📋 Specs & Changelog  [I]", id="btn-specs")
+                    yield Button("🚀 Patch App [P]", id="btn-patch", classes="btn-primary")
+                    yield Button("📝 Change Source [S]", id="btn-source")
+                    yield Button("🎨 UI Themes [T]", id="btn-themes")
+                    yield Button("📦 Bundle Patcher (Experimental) [B]", id="btn-bundle")
+                    yield Button("⚙️ Configure & Settings [C]", id="btn-settings")
+                    yield Button("🔌 Fetch Dependency [G]", id="btn-dependency")
+                    yield Button("🗑️ Storage Manager [D]", id="btn-storage")
+                    yield Button("📋 Specs & Changelog [I]", id="btn-specs")
 
                     if has_root:
                         yield Button("🔒 Unmount Patched App", id="btn-unmount", classes="btn-danger")
 
-                    yield Button("🚪 Exit Enhancify  [Q]", id="btn-exit", classes="btn-danger")
+                    yield Button("🚪 Exit EnhanciPy [Q]", id="btn-exit", classes="btn-danger")
 
         yield Footer()
 

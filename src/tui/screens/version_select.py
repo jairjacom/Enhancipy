@@ -20,6 +20,7 @@ from src.antisplit import antisplit_mgr
 from src.apkmirror import ScrapedVersion, apkmirror_scraper
 from src.config import config
 from src.environment import env
+from src.theme import palette
 from src.tui.widgets.dialogs import (
     ConfirmDialog,
     DownloadProgressModal,
@@ -56,7 +57,7 @@ class VersionSelectScreen(Screen):
 
         with ContentContainer(classes="container-box"):
             with Vertical(classes="card list-card"):
-                yield Label(f"📦 Select Version for [bold #00ff7f]{app_name}[/]", classes="card-title")
+                yield Label(f"📦 Select Version for [bold $enh-accent]{app_name}[/]", classes="card-title")
                 yield Label("Select a version from APKMirror. [RECOMMENDED] versions are tested by patch developers:", classes="card-desc")
 
                 with ButtonBar():
@@ -107,24 +108,25 @@ class VersionSelectScreen(Screen):
         v_list.clear()
 
         if not self.versions_list:
-            v_list.append(ListItem(Label(Text("No versions found. Check internet connection or APKMirror name.", style="red"))))
+            v_list.append(ListItem(Label(Text("No versions found. Check internet connection or APKMirror name.", style=palette()["danger"]))))
             return
 
+        pal = palette()
         for idx, v in enumerate(self.versions_list):
             txt = Text()
-            txt.append("📌 ", style="bold #00ff7f")
-            txt.append(f"{v.version:<20}", style="bold #ffffff")
+            txt.append("📌 ", style=f"bold {pal['accent']}")
+            txt.append(f"{v.version:<20}", style=f"bold {pal['text']}")
 
             if v.tag == "[RECOMMENDED]":
-                txt.append(" [RECOMMENDED]", style="bold #00ff7f")
+                txt.append(" [RECOMMENDED]", style=f"bold {pal['accent']}")
             elif v.tag == "[INSTALLED]":
-                txt.append(" [INSTALLED]", style="bold #00e5ff")
+                txt.append(" [INSTALLED]", style=f"bold {pal['accent_2']}")
             elif v.tag == "[BETA]":
-                txt.append(" [BETA]", style="#ffd700")
+                txt.append(" [BETA]", style=pal["warning"])
             elif v.tag == "[ALPHA]":
-                txt.append(" [ALPHA]", style="#ff4444")
+                txt.append(" [ALPHA]", style=pal["danger"])
             else:
-                txt.append(" [STABLE]", style="#8b949e")
+                txt.append(" [STABLE]", style=pal["muted"])
 
             item = ListItem(Label(txt))
             item.version_idx = idx
@@ -296,7 +298,7 @@ class VersionSelectScreen(Screen):
                     self.app.push_screen,
                     MessageDialog(
                         "Download Failed",
-                        "Oh No !!\nUnable to complete download. Please Check your internet connection and Retry.",
+                        "Download failed. Check your internet connection and retry.",
                     ),
                 )
                 return

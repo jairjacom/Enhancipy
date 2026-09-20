@@ -14,6 +14,7 @@ from textual.screen import Screen
 from textual.widgets import Button, Footer, Label, ListItem, ListView
 
 from src.environment import env
+from src.theme import palette
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 from src.utils import format_size
@@ -26,7 +27,7 @@ class FilePickerScreen(Screen[Optional[Path]]):
     """File browser screen."""
 
     BINDINGS = [
-        ("u", "up", "Up Dir"),
+        ("u", "up", "Up Directory"),
         ("b", "cancel", "Cancel"),
         ("escape", "cancel", "Cancel"),
     ]
@@ -57,7 +58,7 @@ class FilePickerScreen(Screen[Optional[Path]]):
         with ContentContainer(classes="container-box"):
             with Vertical(classes="card list-card"):
                 yield Label("📂 Select File from Storage", classes="card-title")
-                yield Label(f"Current Path: [bold #00e5ff]{self.current_dir}[/]", id="path-label", classes="card-desc")
+                yield Label(f"Current Path: [bold $enh-accent-2]{self.current_dir}[/]", id="path-label", classes="card-desc")
 
                 with ButtonBar():
                     yield Button("⬆️ Up Directory [U]", id="btn-up")
@@ -73,7 +74,7 @@ class FilePickerScreen(Screen[Optional[Path]]):
     def populate_directory(self) -> None:
         """Populate ListView with entries from current_dir."""
         try:
-            self.query_one("#path-label", Label).update(f"Current Path: [bold #00e5ff]{self.current_dir}[/]")
+            self.query_one("#path-label", Label).update(f"Current Path: [bold $enh-accent-2]{self.current_dir}[/]")
         except Exception:
             pass
 
@@ -83,28 +84,29 @@ class FilePickerScreen(Screen[Optional[Path]]):
         try:
             entries = sorted(list(self.current_dir.iterdir()), key=lambda x: (not x.is_dir(), x.name.lower()))
         except Exception:
-            file_list.append(ListItem(Label(Text("❌ Permission denied or directory unreadable", style="red"))))
+            file_list.append(ListItem(Label(Text("❌ Permission denied or directory unreadable", style=palette()["danger"]))))
             return
 
+        pal = palette()
         for p in entries:
             if p.name.startswith("."):
                 continue
 
             if p.is_dir():
                 txt = Text()
-                txt.append("📁 ", style="bold #00e5ff")
-                txt.append(f"{p.name}/", style="bold #ffffff")
+                txt.append("📁 ", style=f"bold {pal['accent_2']}")
+                txt.append(f"{p.name}/", style=f"bold {pal['text']}")
                 item = ListItem(Label(txt))
                 item.entry_is_dir = True
                 item.dir_name = p.name
                 file_list.append(item)
             elif p.suffix.lower() in self.allowed_exts:
                 txt = Text()
-                txt.append("📦 ", style="bold #00ff7f")
-                txt.append(f"{p.name:<30}", style="#e6edf3")
+                txt.append("📦 ", style=f"bold {pal['accent']}")
+                txt.append(f"{p.name:<30}", style=pal["text"])
                 try:
                     sz_str = format_size(p.stat().st_size)
-                    txt.append(f" ({sz_str})", style="#8b949e")
+                    txt.append(f" ({sz_str})", style=pal["muted"])
                 except Exception:
                     pass
                 item = ListItem(Label(txt))

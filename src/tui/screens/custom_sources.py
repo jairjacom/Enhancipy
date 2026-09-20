@@ -14,6 +14,7 @@ from textual.widgets import Button, Footer, Label, ListItem, ListView
 
 from src.environment import env
 from src.sources import SourceInfo, sources_mgr
+from src.theme import palette
 from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
@@ -64,13 +65,14 @@ class CustomSourcesScreen(Screen):
             c_list.append(ListItem(Label(Text("No custom sources added yet. Click 'Add New Source' above.", style="dim"))))
             return
 
+        pal = palette()
         for idx, s in enumerate(custom_sources):
             txt = Text()
-            txt.append("📦 ", style="bold #d2a8ff")
-            txt.append(f"{s.source:<20}", style="bold #ffffff")
-            txt.append(f" ({s.repository})", style="#00e5ff")
+            txt.append("📦 ", style=f"bold {pal['tag']}")
+            txt.append(f"{s.source:<20}", style=f"bold {pal['text']}")
+            txt.append(f" ({s.repository})", style=pal['accent_2'])
             if s.json_url:
-                txt.append(" [JSON API]", style="#00ff7f")
+                txt.append(" [JSON API]", style=pal['accent'])
 
             item = ListItem(Label(txt))
             item.source_idx = idx
@@ -147,7 +149,7 @@ class CustomSourcesScreen(Screen):
 
     def action_help(self) -> None:
         help_text = (
-            "HOW TO ADD CUSTOM SOURCES:\n\n"
+            "How to add custom sources:\n\n"
             "1. Source Name: Unique identifier for this patcher profile.\n"
             "2. Repository: Format 'owner/repo' containing patch releases.\n"
             "3. JSON URL (Optional): Raw link to patches-list.json file.\n"

@@ -15,6 +15,7 @@ from textual.widgets import Button, Footer, Label, ListItem, ListView
 
 from src.config import config
 from src.environment import env
+from src.theme import palette
 from src.patches import patches_mgr
 from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog, SelectDialog
 from src.tui.widgets.header import CyberHeader
@@ -46,7 +47,7 @@ class OptionsEditScreen(Screen):
 
         with ContentContainer(classes="container-box"):
             with Vertical(classes="card list-card"):
-                yield Label(f"⚙️ Configure Patch Options for [bold #00ff7f]{app_name}[/]", classes="card-title")
+                yield Label(f"⚙️ Configure Patch Options for [bold $enh-accent]{app_name}[/]", classes="card-title")
                 yield Label("Select an option below to modify its value, or proceed to start patching:", classes="card-desc")
 
                 with ButtonBar():
@@ -93,9 +94,10 @@ class OptionsEditScreen(Screen):
         o_list.clear()
 
         if not self.options_list:
-            o_list.append(ListItem(Label(Text("No configurable options for enabled patches. You can proceed directly!", style="#00ff7f"))))
+            o_list.append(ListItem(Label(Text("No configurable options for enabled patches. You can proceed directly!", style=palette()["accent"]))))
             return
 
+        pal = palette()
         for idx, opt in enumerate(self.options_list):
             title = opt["title"]
             pn = opt["patchName"]
@@ -103,10 +105,10 @@ class OptionsEditScreen(Screen):
             opt_type = opt["type"]
 
             txt = Text()
-            txt.append("⚙️ ", style="bold #00e5ff")
-            txt.append(f"{title:<30}", style="bold #ffffff")
-            txt.append(f" ({pn})", style="#8b949e")
-            txt.append(f" = [ {val} ]", style="bold #00ff7f")
+            txt.append("⚙️ ", style=f"bold {pal['accent_2']}")
+            txt.append(f"{title:<30}", style=f"bold {pal['text']}")
+            txt.append(f" ({pn})", style=pal["muted"])
+            txt.append(f" = [ {val} ]", style=f"bold {pal['accent']}")
 
             item = ListItem(Label(txt))
             item.opt_idx = idx

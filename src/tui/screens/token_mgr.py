@@ -9,7 +9,7 @@ from typing import Optional
 import requests
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from src.tui.widgets.content_container import ContentContainer
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Label, Static
@@ -25,7 +25,7 @@ class TokenManagerScreen(Screen):
     """GitHub Token configuration screen."""
 
     BINDINGS = [
-        ("a", "add_token", "Add Token"),
+        ("a", "add_token", "Add / Update Token"),
         ("d", "delete_token", "Delete Token"),
         ("g", "guide", "Guide"),
         ("b", "back", "Back"),
@@ -49,7 +49,7 @@ class TokenManagerScreen(Screen):
                     yield Button("📖 Guide [G]", id="btn-guide")
                     yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-            with Vertical(classes="card"):
+            with VerticalScroll(classes="card detail-card"):
                 yield Label("⚡ Benefits of GitHub Token", classes="card-title")
                 benefits = (
                     "• Increases API rate limit from 60 requests/hour to 5,000 requests/hour\n"
@@ -65,8 +65,8 @@ class TokenManagerScreen(Screen):
         tok = config.get_github_token()
         if tok:
             masked = tok[:4] + "*" * (len(tok) - 8) + tok[-4:] if len(tok) > 8 else "***"
-            return f"Status: [bold #00ff7f]✓ Active Token Configured ({masked})[/]"
-        return "Status: [bold #ffd700]⚠ No Token Configured (Using unauthenticated 60 req/hr limit)[/]"
+            return f"Status: [bold $enh-accent]✓ Active Token Configured ({masked})[/]"
+        return "Status: [bold $enh-warning]⚠ No Token Configured (Using unauthenticated 60 req/hr limit)[/]"
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id
@@ -125,10 +125,10 @@ class TokenManagerScreen(Screen):
 
     def action_guide(self) -> None:
         guide = (
-            "HOW TO GENERATE GITHUB TOKEN:\n\n"
+            "How to generate a GitHub token:\n\n"
             "1. Visit https://github.com/settings/tokens\n"
             "2. Click 'Generate new token (classic)'\n"
-            "3. Note: 'Enhancify Termux'\n"
+            "3. Note: 'EnhanciPy Termux'\n"
             "4. Expiration: 90 days or No expiration\n"
             "5. Scopes: 'public_repo'\n"
             "6. Click 'Generate token' and copy the secret key\n"

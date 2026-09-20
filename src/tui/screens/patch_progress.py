@@ -22,6 +22,7 @@ from src.config import config
 from src.environment import env
 from src.installer import app_installer
 from src.patcher import PatchExecutionConfig, patcher_engine
+from src.theme import palette
 from src.tui.screens.main_menu import MainMenuScreen
 from src.tui.widgets.dialogs import MessageDialog, ProgressModal
 from src.tui.widgets.header import CyberHeader
@@ -32,7 +33,7 @@ class PatchProgressScreen(Screen):
     """Live patch execution console and installer."""
 
     BINDINGS = [
-        ("i", "install", "Install APK"),
+        ("i", "install", "Install & Finalize"),
         ("s", "share_logs", "Share Logs"),
         ("m", "main_menu", "Main Menu"),
     ]
@@ -56,8 +57,8 @@ class PatchProgressScreen(Screen):
 
         with ContentContainer(classes="container-box"):
             with Vertical(classes="card"):
-                yield Label(f"🚀 Patching [bold #00ff7f]{app_name} {app_ver}[/] with [bold #00e5ff]{source_name}[/]", classes="card-title")
-                yield Label("Status: [bold #ffd700]Initializing JVM & CLI Patcher...[/]", id="status-label", classes="card-desc")
+                yield Label(f"🚀 Patching [bold $enh-accent]{app_name} {app_ver}[/] with [bold $enh-accent-2]{source_name}[/]", classes="card-title")
+                yield Label("Status: [bold $enh-warning]Initializing JVM & CLI Patcher...[/]", id="status-label", classes="card-desc")
                 yield ProgressBar(total=100, show_eta=False, id="progress-bar")
 
                 with ButtonBar(id="action-buttons"):
@@ -134,12 +135,13 @@ class PatchProgressScreen(Screen):
         classic bash findPatchedApp prompt) — skip straight to the success
         state instead of re-running the CLI patcher."""
         self.patch_success = True
+        pal = palette()
         self.query_one("#log-viewer", RichLog).write(
-            "[bold #00ff7f]Reusing previously patched APK — skipping patch step.[/]"
+            f"[bold {pal['accent']}]Reusing previously patched APK — skipping patch step.[/]"
         )
         self.query_one("#progress-bar", ProgressBar).update(progress=100)
         self.query_one("#status-label", Label).update(
-            "Status: [bold #00ff7f]✓ Using existing patched APK![/]"
+            "Status: [bold $enh-accent]✓ Using existing patched APK![/]"
         )
         self.query_one("#btn-install", Button).disabled = False
 
@@ -156,7 +158,7 @@ class PatchProgressScreen(Screen):
         def prog_cb(pct: float, msg: str) -> None:
             def update_ui():
                 try:
-                    self.query_one("#status-label", Label).update(f"Status: [bold #00e5ff]{msg}[/]")
+                    self.query_one("#status-label", Label).update(f"Status: [bold $enh-accent-2]{msg}[/]")
                     self.query_one("#progress-bar", ProgressBar).update(progress=int(pct * 100))
                 except Exception:
                     pass
@@ -174,11 +176,11 @@ class PatchProgressScreen(Screen):
 
                 if success:
                     pbar.update(progress=100)
-                    status_lbl.update("Status: [bold #00ff7f]✓ Patching Succeeded![/]")
+                    status_lbl.update("Status: [bold $enh-accent]✓ Patching Succeeded![/]")
                     btn_install.disabled = False
                     self.app.push_screen(MessageDialog("Success", "Patching completed successfully! Click 'Install & Finalize' to install or export."))
                 else:
-                    status_lbl.update(f"Status: [bold #ff4444]✗ Patching Failed![/]")
+                    status_lbl.update("Status: [bold $enh-danger]✗ Patching Failed![/]")
                     self.app.push_screen(MessageDialog("Patching Failed", msg))
             except Exception:
                 pass

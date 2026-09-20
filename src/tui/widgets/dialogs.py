@@ -18,6 +18,7 @@ from textual.widgets import Button, Input, Label, LoadingIndicator, Static
 from src.tui.widgets.button_bar import ButtonBar
 
 from src.tui.widgets.gradient import GradientProgressBar, GradientSpinner
+from src.theme import palette
 from src.utils import format_size
 
 
@@ -427,7 +428,7 @@ class DownloadProgressModal(ModalScreen[Optional[str]]):
                 size = info.get("size", 0)
                 if info.get("done"):
                     mark = "✔" if not info.get("failed") else "✖"
-                    color = "#00ff7f" if not info.get("failed") else "#ff4444"
+                    color = "$enh-accent" if not info.get("failed") else "$enh-danger"
                     lines.append(
                         f"[bold {color}]{mark}[/] {label} — "
                         f"{'complete' if not info.get('failed') else 'failed'}"
@@ -452,7 +453,7 @@ class DownloadProgressModal(ModalScreen[Optional[str]]):
                 bar = "█" * filled + "░" * (mini_w - filled)
                 lines.append(
                     f"⬇ [bold]{label}[/] [dim]({size_s})[/]  "
-                    f"[#00e5ff]{bar}[/] [bold]{pct_s}%[/]"
+                    f"[$enh-accent-2]{bar}[/] [bold]{pct_s}%[/]"
                 )
             if lines:
                 rows.update("\n".join(lines))
@@ -801,7 +802,7 @@ class PatchDescriptionDialog(ModalScreen[None]):
         self.recommended = recommended
 
     def compose(self) -> ComposeResult:
-        name_style = "bold #00ff7f"
+        name_style = "bold $enh-accent"
         badge = "  [RECOMMENDED]" if self.recommended else ""
         with Vertical(classes="dialog-box small-dialog"):
             yield Label("| Patch Details |", classes="dialog-title")
@@ -968,13 +969,13 @@ class AppearanceDialog(ModalScreen[Optional[str]]):
         self,
         theme_name: str,
         theme_description: str = "",
-        theme_color: str = "#00ff7f",
+        theme_color: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.theme_name = theme_name
         self.theme_description = theme_description
-        self.theme_color = theme_color
+        self.theme_color = theme_color or palette()["accent"]
 
     def compose(self) -> ComposeResult:
         from src.tui.widgets.gradient import GradientProgressBar

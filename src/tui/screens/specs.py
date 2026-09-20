@@ -9,7 +9,7 @@ import requests
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from src.tui.widgets.content_container import ContentContainer
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Label, Static
@@ -54,15 +54,15 @@ class SpecsScreen(Screen):
                     f"• Storage Info      : {specs.storage_info}",
                     f"• System Locale     : {specs.locale}",
                     f"• Java Runtime      : OpenJDK {java_ver} ({java_pkg})",
-                    f"• Enhancify Version : {specs.enhancify_version}",
+                    f"• EnhanciPy Version : {specs.enhancify_version}",
                 ]
                 yield Label("\n".join(specs_lines), classes="card-desc")
 
                 with ButtonBar():
                     yield Button("🔙 Back to Main Menu [B]", id="btn-back", classes="btn-primary")
 
-            with Vertical(classes="card"):
-                yield Label(f"📋 Enhancify {specs.enhancify_version} Changelog", classes="card-title")
+            with VerticalScroll(classes="card detail-card"):
+                yield Label(f"📋 EnhanciPy {specs.enhancify_version} Changelog", classes="card-title")
                 yield Label("Loading release notes from GitHub...", id="changelog-label", classes="card-desc")
 
         yield Footer()

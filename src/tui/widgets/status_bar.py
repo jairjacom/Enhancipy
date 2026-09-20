@@ -32,8 +32,6 @@ class CyberStatusBar(Widget):
            CyberHeader, so both stay visible (two dock:top widgets
            overlap and squash each other in Textual 8.x) */
         height: auto;
-        background: #0b1015;
-        border-bottom: solid #30363d;
         padding: 0 1;
     }
     #status-bar-rows {
@@ -45,7 +43,6 @@ class CyberStatusBar(Widget):
         height: auto;
     }
     .status-nav-hint {
-        color: #8b949e;
         margin-top: 1;
         text-style: italic;
         height: auto;
@@ -69,10 +66,13 @@ class CyberStatusBar(Widget):
     KEY_WIDTH = 14  # len("Initiated Mode") — pads the key column
 
     def _rows(self):
-        """Classic-aligned (key, icon, value, color, classes) tuples."""
-        yield ("Initiated Mode", "⚙️", self.mode_label, "#00ff7f", "status-line line-mode")
-        yield ("Status", "🌐", self.online_status, "#00e5ff", "status-line line-status")
-        yield ("Arch", "🤖", self.arch, "#ffd700", "status-line line-arch")
+        """Classic-aligned (key, icon, value, color, classes) tuples.
+
+        Colors are CSS variable names so the rows recolor live with the theme.
+        """
+        yield ("Initiated Mode", "️", self.mode_label, "$enh-accent", "status-line line-mode")
+        yield ("Status", "🌐", self.online_status, "$enh-accent-2", "status-line line-status")
+        yield ("Arch", "🤖", self.arch, "$enh-warning", "status-line line-arch")
 
     def compose(self) -> ComposeResult:
         with Vertical(id="status-bar-rows"):
@@ -86,7 +86,7 @@ class CyberStatusBar(Widget):
                 )
         if self.nav_hint:
             yield Label(
-                "Navigate with [↑] [↓] [←] [→]   ·   Select with [ENTER / SPACE]",
+                "Navigate with [↑] [↓] [←] [→]  ·  Select with [ENTER / SPACE]",
                 classes="status-nav-hint",
             )
 

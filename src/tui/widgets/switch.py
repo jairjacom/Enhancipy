@@ -23,13 +23,28 @@ from textual.widget import Widget
 from textual.events import Click
 
 from src.tui.widgets.gradient import multi_lerp
+from src.theme import palette
 
-_ON_STOPS = ["#00ff7f", "#00e5ff"]
+# Neutral track/knob shades are intentionally theme-independent.
 _OFF_COLOR = "#5a636e"
 _TRACK_OFF = "#2d333b"
 _TRACK_ON = "#0f3d27"
-_LABEL_ON = "#00ff7f"
-_LABEL_OFF = "#c9d1d9"
+
+
+def _colors() -> dict:
+    """Resolve accent-driven colors at render time.
+
+    Rich ``Text`` styles need literal hex values and the active theme can
+    change between renders, so these are read per frame, never frozen at
+    import time.
+    """
+    pal = palette()
+    return {
+        "on_stops": [pal["accent"], pal["accent_2"]],
+        "label_on": pal["accent"],
+        "label_off": pal["muted"],
+        "muted": pal["muted"],
+    }
 
 
 class CyberSwitch(Widget):
@@ -151,6 +166,8 @@ class CyberSwitch(Widget):
     # ---------------------------------------------------------------- render
 
     def render(self) -> Text:
+        cols = _colors()
+        on_stops = cols["on_stops"]
         out = Text()
         n = self.TRACK_LEN
         pos = max(0.0, min(1.0, self._anim))
@@ -160,27 +177,27 @@ class CyberSwitch(Widget):
         for i in range(n):
             if i == idx:
                 if on:
-                    color = multi_lerp(_ON_STOPS, pos)
+                    color = multi_lerp(on_stops, pos)
                     out.append("⬤", style=Style(color=color, bold=True))
                 else:
                     out.append("⬤", style=Style(color=_OFF_COLOR, bold=True))
             else:
                 if on and i < idx:
                     # Trail behind the knob lights up as it slides right
-                    color = multi_lerp(_ON_STOPS, i / max(1, n - 1))
+                    color = multi_lerp(on_stops, i / max(1, n - 1))
                     out.append("─", style=Style(color=color, bold=True))
                 elif on:
                     out.append("─", style=Style(color=_TRACK_ON))
                 else:
                     out.append("─", style=Style(color=_TRACK_OFF))
 
-        state_color = _LABEL_ON if on else _OFF_COLOR
+        state_color = cols["label_on"] if on else _OFF_COLOR
         out.append(" ")
         out.append(f"[{'ON' if on else 'OFF'}]", style=Style(color=state_color, bold=True))
         out.append("  ")
-        out.append(self.label, style=Style(color=_LABEL_ON if on else _LABEL_OFF, bold=on))
+        out.append(self.label, style=Style(color=cols["label_on"] if on else cols["label_off"], bold=on))
         if self.description:
-            out.append(f"  —  {self.description}", style=Style(color="#8b949e"))
+            out.append(f"  ·  {self.description}", style=Style(color=cols["muted"]))
         return out
 
     DEFAULT_CSS = """
@@ -193,9 +210,9 @@ class CyberSwitch(Widget):
         overflow: hidden;
     }
     CyberSwitch:focus {
-        border: round #00e5ff;
+        border: round $enh-accent-2;
     }
     CyberSwitch.on {
-        background: #0a1f14;
+        background: $enh-row-focus-bg;
     }
     """

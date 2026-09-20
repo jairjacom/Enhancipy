@@ -12,6 +12,7 @@ from src.tui.widgets.button_bar import ButtonBar
 
 from src.config import config
 from src.environment import env
+from src.theme import palette
 
 
 class CyberHeader(Widget):
@@ -21,8 +22,6 @@ class CyberHeader(Widget):
     CyberHeader {
         dock: top;
         height: auto;
-        background: #161b22;
-        border-bottom: solid #00ff7f;
         padding: 0 1;
     }
     #cyber-header {
@@ -38,9 +37,10 @@ class CyberHeader(Widget):
         self.online_status = online_status
 
     def compose(self) -> ComposeResult:
+        pal = palette()
         with Vertical(id="cyber-header"):
             # ASCII / Stylized title
-            title_text = Text("⚡ E N H A N C I F Y ⚡", style="bold #00ff7f")
+            title_text = Text("⚡ E N H A N C I F Y ⚡", style="bold " + pal["accent"])
             yield Label(title_text, id="header-title")
 
             source_name = config.get("SOURCE", "Anddea")
@@ -58,11 +58,11 @@ class CyberHeader(Widget):
                 hide_when_stacked=True,
             ):
                 # Privilege badge
-                mode_color = "#00ff7f" if "Root" in self.mode_label else "#00e5ff" if "Rish" in self.mode_label else "#d2a8ff"
+                mode_color = pal["accent"] if "Root" in self.mode_label else pal["accent_2"] if "Rish" in self.mode_label else pal["tag"]
                 yield Label(f"⚙️ {self.mode_label}", classes="badge badge-green")
 
                 # Network badge
-                net_color = "#00ff7f" if self.online_status == "Online" else "#ffd700" if "Partial" in self.online_status else "#ff4444"
+                net_color = pal["accent"] if self.online_status == "Online" else pal["warning"] if "Partial" in self.online_status else pal["danger"]
                 yield Label(f"🌐 {self.online_status}", classes="badge badge-cyan")
 
                 # Source badge

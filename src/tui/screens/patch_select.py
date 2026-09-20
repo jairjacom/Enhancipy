@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Set
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from src.tui.widgets.content_container import ContentContainer
 from textual.message import Message
 from textual.screen import Screen
@@ -20,6 +20,7 @@ from textual.widgets import Button, Checkbox, Footer, Input, Label, ListItem, Li
 from src.assets import assets_mgr
 from src.config import config
 from src.environment import env
+from src.theme import palette
 from src.patches import patches_mgr
 from src.tui.widgets.dialogs import MessageDialog, PatchDescriptionDialog
 from src.tui.widgets.header import CyberHeader
@@ -113,7 +114,7 @@ class PatchSelectScreen(Screen):
         ("r", "select_recommended", "Recommended"),
         ("a", "select_all", "Select All"),
         ("d", "deselect_all", "Deselect All"),
-        ("n", "next", "Configure Options"),
+        ("n", "next", "Next: Options"),
         ("b", "back", "Back"),
         ("escape", "back", "Back"),
     ]
@@ -138,7 +139,7 @@ class PatchSelectScreen(Screen):
 
         with ContentContainer(classes="container-box"):
             with Vertical(classes="card list-card"):
-                yield Label(f"🛠️ Select Patches for [bold #00ff7f]{app_name}[/]", classes="card-title")
+                yield Label(f"🛠️ Select Patches for [bold $enh-accent]{app_name}[/]", classes="card-title")
                 yield Label(f"📦 Source: {source_name}", id="patch-source-label", classes="card-desc")
                 yield Label("Enabled: 0 / 0", id="patch-count-label", classes="card-desc")
 
@@ -155,7 +156,7 @@ class PatchSelectScreen(Screen):
 
                 yield ListView(id="patches-list")
 
-            with Vertical(classes="card"):
+            with VerticalScroll(classes="card detail-card"):
                 yield Label("ℹ️ Patch Description", classes="card-title")
                 yield Label("Select a patch above to view its details.", id="patch-desc-label", classes="card-desc")
 
@@ -265,11 +266,12 @@ class PatchSelectScreen(Screen):
         tot_all = len(self.all_patches)
         try:
             self.query_one("#patch-count-label", Label).update(
-                f"Enabled: [bold #00ff7f]{tot_enabled}[/] / {tot_all} patches"
+                f"Enabled: [bold $enh-accent]{tot_enabled}[/] / {tot_all} patches"
             )
         except Exception:
             pass
 
+        pal = palette()
         for idx, p in enumerate(self.filtered_patches):
             name = p["name"]
             is_enabled = name in self.enabled_patches
@@ -277,13 +279,13 @@ class PatchSelectScreen(Screen):
 
             txt = Text()
             if is_enabled:
-                txt.append("☑ ", style="bold #00ff7f")
+                txt.append("☑ ", style=f"bold {pal['accent']}")
             else:
                 txt.append("☐ ", style="dim")
 
-            txt.append(f"{name:<35}", style="bold #ffffff" if is_enabled else "#c9d1d9")
+            txt.append(f"{name:<35}", style=f"bold {pal['text']}" if is_enabled else pal["muted"])
             if is_rec:
-                txt.append(" [RECOMMENDED]", style="bold #00ff7f")
+                txt.append(" [RECOMMENDED]", style=f"bold {pal['accent']}")
 
             item = PatchItem(Label(txt), patch_name=name, recommended=is_rec)
             item.patch_idx = idx
@@ -317,7 +319,7 @@ class PatchSelectScreen(Screen):
         if pname:
             desc = self.patch_descriptions.get(pname, "No description available.")
             try:
-                self.query_one("#patch-desc-label", Label).update(f"[bold #00ff7f]{pname}[/]:\n{desc}")
+                self.query_one("#patch-desc-label", Label).update(f"[bold $enh-accent]{pname}[/]:\n{desc}")
             except Exception:
                 pass
 

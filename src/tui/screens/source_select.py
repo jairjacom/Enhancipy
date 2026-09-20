@@ -20,13 +20,14 @@ from src.sources import SourceInfo, sources_mgr
 from src.tui.widgets.dialogs import MessageDialog, ProgressModal
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
+from src.theme import palette
 
 
 class SourceSelectScreen(Screen):
     """Screen for selecting active patch source or picking sources to start patching."""
 
     BINDINGS = [
-        ("p", "proceed", "Proceed"),
+        ("p", "proceed", "Proceed to Apps"),
         ("r", "refresh_tags", "Refresh Tags"),
         ("c", "custom_sources", "Custom Sources"),
         ("b", "back", "Back"),
@@ -62,7 +63,7 @@ class SourceSelectScreen(Screen):
                         yield Label("📦 Multi-Patcher Mode: Select up to 3 sources", classes="card-title")
                         yield Label("Click sources to toggle selection (1 to 3 sources):", classes="card-desc")
                     else:
-                        yield Label(f"📦 Active Source: [bold #00ff7f]{current_src}[/]", classes="card-title")
+                        yield Label(f"📦 Active Source: [bold $enh-accent]{current_src}[/]", classes="card-title")
                         yield Label("Select a patch source below or refresh tags from GitHub/GitLab:", classes="card-desc")
 
                 with ButtonBar():
@@ -95,6 +96,7 @@ class SourceSelectScreen(Screen):
         sources_list = self.query_one("#sources-list", ListView)
         sources_list.clear()
 
+        pal = palette()
         for s in sources:
             # Channel-aware tag: prerelease when enabled, stable otherwise.
             version_str, channel = sources_mgr.get_display_tag(s.source)
@@ -108,21 +110,21 @@ class SourceSelectScreen(Screen):
 
             txt = Text()
             if is_active:
-                txt.append("● " if not is_multi else "☑ ", style="bold #00ff7f")
+                txt.append("● " if not is_multi else "☑ ", style=f"bold {pal['accent']}")
             else:
                 txt.append("○ " if not is_multi else "☐ ", style="dim")
 
-            txt.append(f"{s.source:<20}", style="bold #ffffff" if is_active else "#e6edf3")
+            txt.append(f"{s.source:<20}", style=f"bold {pal['text']}" if is_active else pal["text"])
             if version_str == "No tag cached":
-                txt.append(f" ({version_str})", style="#8b949e")
+                txt.append(f" ({version_str})", style=pal["muted"])
             elif channel == "pre":
-                txt.append(f" ({version_str})", style="#ffd700")
-                txt.append(" [PRE]", style="bold #ffd700")
+                txt.append(f" ({version_str})", style=pal["warning"])
+                txt.append(" [PRE]", style=f"bold {pal['warning']}")
             else:
-                txt.append(f" ({version_str})", style="#00e5ff")
+                txt.append(f" ({version_str})", style=pal["accent_2"])
 
             if s.is_custom:
-                txt.append(" [CUSTOM]", style="bold #d2a8ff")
+                txt.append(" [CUSTOM]", style=f"bold {pal['tag']}")
 
             item = ListItem(Label(txt))
             item.source_name = s.source
