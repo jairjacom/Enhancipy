@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Runtime caches and downloads (auto-created)
+assets/
+apps/
+apps_meta/
+bin/
+cli_cache/
+storage/
+
+# User data and local state
+keystore/
+.config
+user_sources.json
+tag.json
+cli_detection.json
+bundle_patcher_sources.json
+github_token.json
+github_api_log.json
+apkmirror_config.json

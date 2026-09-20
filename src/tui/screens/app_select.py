@@ -1,0 +1,538 @@
+"""
+Enhancify App Selection Screen
+Displays supported apps for the active patch source, with search filtering and direct file import.
+
+Asset fetch flow (classic parity):
+  1. Fetch release metadata
+  2. Show '| Changelog |' dialog with Download / Back buttons
+  3. Download CLI + Patches (simultaneously via aria2c when available,
+     showing both gauges at once — classic downloadBatchAria2c mixedgauge)
+  4. Parse patches list (API or CLI)
+"""
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from rich.text import Text
+from textual import work
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal, Vertical
+from src.tui.widgets.content_container import ContentContainer
+from textual.screen import Screen
+from textual.widgets import Button, Footer, Input, Label, ListItem, ListView
+
+from src.antisplit import antisplit_mgr
+from src.apkmirror import apkmirror_scraper
+from src.assets import AssetReleaseInfo, assets_mgr
+from src.config import config
+from src.environment import env
+from src.tui.screens.file_picker import FilePickerScreen
+from src.tui.widgets.dialogs import (
+    ChangelogDialog,
+    DownloadProgressModal,
+    MessageDialog,
+    ParseProgressModal,
+    ProgressModal,
+)
+from src.tui.widgets.header import CyberHeader
+from src.tui.widgets.button_bar import ButtonBar
+from src.utils import DownloadResult
+
+import json
+import shutil
+
+
+class AppSelectScreen(Screen):
+    """App selection screen with live search."""
+
+    BINDINGS = [
+        ("i", "import_file", "Import APK"),
+        ("r", "refresh", "Refresh Apps"),
+        ("b", "back", "Back"),
+        ("escape", "back", "Back"),
+    ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.apps_data: List[Dict[str, Any]] = []
+        self.filtered_apps: List[Dict[str, Any]] = []
+        self.active_source = config.get("SOURCE", "Anddea")
+        self.release_info: Optional[AssetReleaseInfo] = None
+
+    def compose(self) -> ComposeResult:
+        has_root, has_rish, mode_label = env.check_privileges()
+        _, _, net_status = env.check_network()
+
+        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+
+        with ContentContainer(classes="container-box"):
+            with Vertical(classes="card list-card"):
+                yield Label("📱 Select Target Application", classes="card-title")
+                yield Label("Choose an application to patch or import an APK from storage:", classes="card-desc")
+
+                yield Input(placeholder="🔍 Search apps by name or package...", id="search-input")
+
+                with ButtonBar():
+                    yield Button("📥 Import File [I]", id="btn-import", classes="btn-primary")
+                    yield Button("🔄 Refresh [R]", id="btn-refresh")
+                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
+
+                yield ListView(id="apps-list")
+
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.active_source = config.get("SOURCE", "Anddea")
+        self.load_source_apps()
+
+    # ------------------------------------------------------------ asset flow
+
+    def load_source_apps(self) -> None:
+        """Phase 1: lightweight fetch of release metadata."""
+        modal = ProgressModal(
+            "Loading Assets", f"Fetching metadata for {self.active_source}..."
+        )
+        self.app.push_screen(modal)
+        self.run_assets_worker(modal)
+
+    @work(thread=True)
+    def run_assets_worker(self, modal: ProgressModal) -> None:
+        try:
+            rel = assets_mgr.fetch_source_release_info(self.active_source)
+            if not rel:
+                self.app.call_from_thread(modal.safe_dismiss)
+                self.app.call_from_thread(
+                    self.app.push_screen,
+                    MessageDialog(
+                        "Error",
+                        f"Failed to fetch release info for {self.active_source}!",
+                    ),
+                )
+                return
+
+            # Hand back to the UI thread — the changelog dialog must be
+            # shown BEFORE any download starts (classic parity).
+            self.app.call_from_thread(modal.safe_dismiss)
+            self.app.call_from_thread(self._on_release_fetched, rel)
+        except Exception as e:
+            try:
+                self.app.call_from_thread(modal.safe_dismiss)
+            except Exception:
+                pass
+            self.app.call_from_thread(
+                self.app.push_screen,
+                MessageDialog("Error", f"Asset load failed: {e}"),
+            )
+
+    def _on_release_fetched(self, rel: AssetReleaseInfo) -> None:
+        """UI thread — decide: changelog dialog → download → parse."""
+        self.release_info = rel
+        pending = self._compute_pending(rel)
+        if not pending:
+            self._continue_after_download(rel)
+            return
+
+        changelog = (rel.changelog or "").strip()
+        if changelog:
+            patches_label = f"Patches-{rel.patches_version}.{rel.patches_ext}"
+            dlg = ChangelogDialog(
+                source_name=rel.source_name,
+                patches_label=patches_label,
+                size_bytes=rel.patches_size,
+                changelog=changelog,
+            )
+            self.app.push_screen(dlg, self._on_changelog_result)
+        else:
+            self._start_download_phase(rel)
+
+    def _on_changelog_result(self, result: Optional[bool]) -> None:
+        """Changelog dialog callback: Download → proceed, Back → leave screen."""
+        if result is True and self.release_info is not None:
+            self._start_download_phase(self.release_info)
+        else:
+            # User pressed Back — abort the fetch and return to the menu.
+            try:
+                self.app.pop_screen()
+            except Exception:
+                pass
+
+    def _compute_pending(self, rel: AssetReleaseInfo) -> List[tuple]:
+        """[(label, size)] of assets still missing on disk."""
+        cli_path = assets_mgr.assets_dir / f"CLI-{rel.cli_version}.jar"
+        patches_path = assets_mgr.assets_dir / rel.source_name / (
+            f"Patches-{rel.patches_version}.{rel.patches_ext}"
+        )
+        pending: List[tuple] = []
+        need_cli = not (
+            cli_path.exists()
+            and (rel.cli_size <= 0 or cli_path.stat().st_size == rel.cli_size)
+        ) and not assets_mgr.get_cached_cli(rel.source_name, rel.cli_version, cli_path)
+        if cli_path.exists() and (rel.cli_size <= 0 or cli_path.stat().st_size == rel.cli_size):
+            need_cli = False
+        if need_cli:
+            pending.append((f"CLI-{rel.cli_version}.jar", rel.cli_size))
+        need_patches = not (
+            patches_path.exists()
+            and (rel.patches_size <= 0 or patches_path.stat().st_size == rel.patches_size)
+        )
+        if need_patches:
+            pending.append((f"Patches-{rel.patches_version}.{rel.patches_ext}", rel.patches_size))
+        return pending
+
+    def _start_download_phase(self, rel: AssetReleaseInfo) -> None:
+        """Push the download modal (mixedgauge when aria2c batch) + worker."""
+        pending = self._compute_pending(rel)
+        if not pending:
+            self._continue_after_download(rel)
+            return
+
+        total_sz = sum(s for _, s in pending if s > 0)
+        aria2_available = (
+            not config.is_on("DISABLE_NETWORK_ACCELERATION")
+            and shutil.which("aria2c") is not None
+        )
+
+        if aria2_available and len(pending) >= 2:
+            # Simultaneous download — show per-file rows (classic mixedgauge)
+            dl_modal = DownloadProgressModal.for_assets_batch(
+                len(pending),
+                total_sz,
+                accelerated=True,
+                files=[(label, size) for label, size in pending],
+            )
+        elif len(pending) > 1:
+            dl_modal = DownloadProgressModal.for_assets_batch(
+                len(pending), total_sz, accelerated=False
+            )
+        else:
+            dl_modal = DownloadProgressModal.for_asset_file(pending[0][0], pending[0][1])
+
+        self.app.push_screen(dl_modal)
+        self.run_download_worker(dl_modal, rel)
+
+    @work(thread=True)
+    def run_download_worker(self, dl_modal: DownloadProgressModal, rel: AssetReleaseInfo) -> None:
+        def on_file_start(label: str, size: int) -> None:
+            if dl_modal._batch:
+                dl_modal.register_batch_file(label, size)
+            else:
+                dl_modal.switch_to_asset_file(label, size)
+
+        def on_prog(label: str, cur: int, tot: int, pct: str) -> None:
+            if dl_modal._batch:
+                dl_modal.on_file_progress(label, cur, tot, pct)
+            else:
+                dl_modal.on_progress(cur, tot, pct)
+
+        dl_result = assets_mgr.download_assets(
+            rel,
+            progress_callback=on_prog,
+            cancel_event=dl_modal.cancel_event,
+            file_start_callback=on_file_start,
+        )
+
+        # Mark finished batch files complete for a final gauge repaint
+        if dl_modal._batch and dl_result == DownloadResult.OK:
+            for label in dl_modal._batch:
+                dl_modal.mark_batch_file_done(label, ok=True)
+
+        self.app.call_from_thread(
+            dl_modal.safe_dismiss,
+            "cancelled" if dl_result == DownloadResult.CANCELLED else None,
+        )
+        if dl_result == DownloadResult.CANCELLED:
+            self.app.call_from_thread(
+                self.app.push_screen,
+                MessageDialog("Cancelled", "Asset download cancelled."),
+            )
+            return
+        if dl_result != DownloadResult.OK:
+            self.app.call_from_thread(
+                self.app.push_screen,
+                MessageDialog(
+                    "Download Failed",
+                    "Unable to download CLI / Patches completely.\n\n"
+                    "Retry or change your Network.",
+                ),
+            )
+            return
+
+        self.app.call_from_thread(self._continue_after_download, rel)
+
+    def _continue_after_download(self, rel: AssetReleaseInfo) -> None:
+        """Phase 3: parse patches list (API or CLI) with gradient spinner."""
+        active_source = self.active_source
+        parse_modal = ParseProgressModal(active_source, from_cli=True)
+        self.app.push_screen(parse_modal)
+        self.run_parse_worker(parse_modal, rel, active_source)
+
+    @work(thread=True)
+    def run_parse_worker(
+        self, parse_modal: ParseProgressModal, rel: AssetReleaseInfo, active_source: str
+    ) -> None:
+        cancelled = False
+        try:
+            # Detect capabilities
+            cli_jar = assets_mgr.assets_dir / f"CLI-{rel.cli_version}.jar"
+            assets_mgr.detect_cli_capabilities(cli_jar)
+
+            def phase_cb(phase: str) -> None:
+                if phase == "api":
+                    parse_modal.set_phase_api()
+                else:
+                    parse_modal.set_phase_cli()
+
+            patches_json = assets_mgr.load_or_fetch_patches_json(
+                active_source,
+                rel,
+                progress_callback=lambda msg: parse_modal.update_message(msg),
+                parse_progress_callback=parse_modal.on_parse_progress,
+                cancel_event=parse_modal.cancel_event,
+                phase_callback=phase_cb,
+            )
+            was_cancel = parse_modal.was_cancelled
+            self.app.call_from_thread(
+                parse_modal.safe_dismiss,
+                "cancelled" if was_cancel else None,
+            )
+            if was_cancel:
+                cancelled = True
+                self.app.call_from_thread(
+                    self.app.push_screen,
+                    MessageDialog("Cancelled", "Patches list generation cancelled."),
+                )
+                return
+
+            if patches_json:
+                apps = []
+                for entry in patches_json:
+                    pname = entry.get("pkgName")
+                    if pname:
+                        parts = pname.split(".")
+                        clean_name = parts[-1].capitalize()
+                        # Generic last segments (very common Play Store suffix,
+                        # e.g. ch.protonmail.android) collapse many unrelated
+                        # apps to the same useless name — fall back one segment.
+                        if clean_name.lower() in ("android", "app", "apps", "mobile") and len(parts) >= 2:
+                            clean_name = parts[-2].capitalize()
+                        pl = pname.lower()
+                        if "youtube" in pl:
+                            clean_name = (
+                                "YouTube" if "music" not in pl else "YouTube Music"
+                            )
+                        elif "twitter" in pl or clean_name.lower() == "x":
+                            clean_name = "Twitter / X"
+                        elif "reddit" in pl:
+                            clean_name = "Reddit"
+                        elif "spotify" in pl:
+                            clean_name = "Spotify"
+
+                        # Fallback slug only — APKMirror's real category slug
+                        # (fetched below) rarely matches the package name, e.g.
+                        # com.twitter.android -> "twitter" not "twitter-/-x",
+                        # com.instagram.android -> "instagram-instagram" not
+                        # "instagram". Guessing it breaks the version fetch.
+                        apkmirror_name = clean_name.lower().replace(" / ", "-").replace(" ", "-")
+                        apps.append(
+                            {
+                                "pkgName": pname,
+                                "appName": clean_name,
+                                "apkmirrorAppName": apkmirror_name,
+                                "versions": entry.get("versions", []),
+                            }
+                        )
+
+                parse_modal.update_message("Resolving real app names from APKMirror...")
+                self._resolve_apkmirror_names(apps, rel, active_source)
+
+                self.apps_data = sorted(apps, key=lambda x: x["appName"])
+        except Exception as e:
+            self.app.call_from_thread(
+                self.app.push_screen,
+                MessageDialog("Error", f"Asset load failed: {e}"),
+            )
+        finally:
+            if not cancelled:
+                self.app.call_from_thread(self.filter_and_display_apps)
+
+    def _resolve_apkmirror_names(
+        self, apps: List[Dict[str, Any]], rel: AssetReleaseInfo, active_source: str
+    ) -> None:
+        """Overlay each app's real APKMirror name + uploads-page category slug
+        (looked up via the app_exists API, cached to Apps-<version>.json like
+        the classic bash flow) onto the heuristic guess set above. Falls back
+        to the guess when APKMirror doesn't recognize a package or the
+        lookup fails (e.g. offline), so the app list still works without
+        network — just with a slug that may not resolve on the version screen.
+        """
+        src_dir = assets_mgr.assets_dir / active_source
+        cache_file = src_dir / f"Apps-{rel.patches_version}.json"
+
+        resolved: Dict[str, Dict[str, str]] = {}
+        if cache_file.exists():
+            try:
+                cached = json.loads(cache_file.read_text(encoding="utf-8"))
+                if isinstance(cached, list):
+                    resolved = {a["pkgName"]: a for a in cached if a.get("pkgName")}
+            except Exception:
+                resolved = {}
+
+        missing = [a["pkgName"] for a in apps if a["pkgName"] not in resolved]
+        if missing:
+            fetched = apkmirror_scraper.resolve_apps_info(missing)
+            for pkg, info in fetched.items():
+                resolved[pkg] = {"pkgName": pkg, **info}
+            if fetched:
+                try:
+                    src_dir.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_text(
+                        json.dumps(list(resolved.values()), indent=2), encoding="utf-8"
+                    )
+                except Exception:
+                    pass
+
+        for app in apps:
+            info = resolved.get(app["pkgName"])
+            if info:
+                app["appName"] = info.get("appName", app["appName"])
+                app["apkmirrorAppName"] = info.get("apkmirrorAppName", app["apkmirrorAppName"])
+
+    # ------------------------------------------------------------- app list
+
+    def filter_and_display_apps(self, query: str = "") -> None:
+        """Filter app list by search text and render in ListView."""
+        apps_list = self.query_one("#apps-list", ListView)
+        apps_list.clear()
+
+        q = query.strip().lower()
+        self.filtered_apps = [
+            a for a in self.apps_data
+            if not q or q in a["appName"].lower() or q in a["pkgName"].lower()
+        ]
+
+        if not self.filtered_apps:
+            apps_list.append(ListItem(Label(Text("No matching applications found.", style="dim"))))
+            return
+
+        for idx, a in enumerate(self.filtered_apps):
+            txt = Text()
+            txt.append("📱 ", style="bold #00ff7f")
+            txt.append(f"{a['appName']:<22}", style="bold #ffffff")
+            txt.append(f" [{a['pkgName']}] ", style="#8b949e")
+
+            item = ListItem(Label(txt))
+            item.app_idx = idx
+            apps_list.append(item)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "search-input":
+            self.filter_and_display_apps(event.value)
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        idx = getattr(event.item, "app_idx", None)
+        if idx is None and 0 <= event.index < len(self.filtered_apps):
+            idx = event.index
+        if idx is not None and 0 <= idx < len(self.filtered_apps):
+            selected_app = self.filtered_apps[idx]
+            # Navigate to VersionSelectScreen
+            self.app.selected_app = selected_app
+            self.app.push_screen("version_select_screen")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id
+        if btn_id == "btn-import":
+            self.action_import_file()
+        elif btn_id == "btn-refresh":
+            self.action_refresh()
+        elif btn_id == "btn-back":
+            self.action_back()
+
+    def action_import_file(self) -> None:
+        """Open file picker to import an APK / bundle directly."""
+        def handle_file(file_path: Optional[Path]) -> None:
+            if not file_path:
+                return
+
+            meta = antisplit_mgr.extract_metadata(file_path)
+            if not meta:
+                self.app.push_screen(
+                    MessageDialog("Import Error", f"Unable to extract metadata from:\n{file_path.name}")
+                )
+                return
+
+            if meta.extension in ("apkm", "apks", "xapk"):
+                # Bundle formats must be merged first — feeding a raw bundle
+                # straight to the patcher CLI makes it fall back to its own
+                # internal merge, which pulls in every split (all archs, all
+                # locales, all DPIs) with no device-arch filtering at all.
+                modal = ProgressModal(
+                    "Merging Bundle",
+                    f"Merging {file_path.name} splits with APKEditor...",
+                )
+                self.app.push_screen(modal)
+                self.run_import_merge_worker(modal, meta)
+                return
+
+            if meta.extension == "apk" and config.is_on("OPTIMIZE_LIBS"):
+                modal = ProgressModal(
+                    "Optimizing Libraries",
+                    "Optimizing native libraries for device architecture...",
+                )
+                self.app.push_screen(modal)
+                self.run_import_optimize_worker(modal, meta)
+                return
+
+            self._finish_import(meta, meta.file_path)
+
+        self.app.push_screen(FilePickerScreen(), handle_file)
+
+    @work(thread=True)
+    def run_import_merge_worker(self, modal: ProgressModal, meta) -> None:
+        target_apk = meta.file_path.parent / f"{meta.version_name}.apk"
+        try:
+            if meta.extension == "apkm":
+                ok = antisplit_mgr.antisplit_apkm(meta.file_path, target_apk)
+            elif meta.extension == "apks":
+                ok = antisplit_mgr.antisplit_apks(meta.file_path, target_apk)
+            else:
+                ok = antisplit_mgr.antisplit_xapk(meta.file_path, target_apk)
+        except Exception:
+            ok = False
+
+        if not ok:
+            self.app.call_from_thread(modal.safe_dismiss)
+            self.app.call_from_thread(
+                self.app.push_screen,
+                MessageDialog("Merge Error", f"Failed to merge {meta.extension.upper()} splits!"),
+            )
+            return
+
+        final_path = target_apk if target_apk.exists() else meta.file_path
+        if config.is_on("OPTIMIZE_LIBS"):
+            antisplit_mgr.optimize_native_libs(final_path)
+
+        self.app.call_from_thread(modal.safe_dismiss)
+        self.app.call_from_thread(self._finish_import, meta, final_path)
+
+    @work(thread=True)
+    def run_import_optimize_worker(self, modal: ProgressModal, meta) -> None:
+        antisplit_mgr.optimize_native_libs(meta.file_path)
+        self.app.call_from_thread(modal.safe_dismiss)
+        self.app.call_from_thread(self._finish_import, meta, meta.file_path)
+
+    def _finish_import(self, meta, apk_path: Path) -> None:
+        self.app.selected_app = {
+            "pkgName": meta.pkg_name,
+            "appName": meta.app_name,
+            "apkmirrorAppName": meta.app_name.lower(),
+            "imported_file": apk_path,
+            "version": meta.version_name,
+            "extension": meta.extension,
+        }
+        self.app.push_screen("patch_select_screen")
+
+    def action_refresh(self) -> None:
+        self.load_source_apps()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
