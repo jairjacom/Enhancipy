@@ -8,6 +8,12 @@ cached privilege snapshot upstream — silently falls through to the
 non-privilege export path, which pops the Android package installer and
 never touches rish-install.sh or dex optimization. These tests pin which
 branch actually executes for each privilege combination.
+
+run_dex_optimization() and the rish branch's post-install steps also get
+their own coverage here: `rish` always exits 0 regardless of the inner
+command's outcome, so a real failure (invalid filter, missing package, a
+filter that never applied) is text-only and must not be reported as
+success.
 """
 
 from __future__ import annotations
@@ -46,9 +52,14 @@ class TestInstallModeRouting(unittest.TestCase):
         with (
             patch("src.installer.run_command") as mock_run_command,
             patch.object(self.installer, "run_dex_optimization") as mock_dexopt,
-            patch("src.installer.subprocess.run") as mock_subproc,
+            patch("src.installer.run_rish") as mock_run_rish,
+            patch.dict("os.environ", {}, clear=False),
         ):
+            import os as _os
+
+            _os.environ.pop("RISH_APPLICATION_ID", None)
             mock_run_command.return_value = (0, "Install succeeded.", "")
+            mock_dexopt.return_value = (True, "DEX optimized (quicken)")
 
             ok, msg = self.installer.install_or_export(
                 self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
@@ -61,11 +72,53 @@ class TestInstallModeRouting(unittest.TestCase):
         rish_cmd = mock_run_command.call_args[0][0]
         self.assertIn(str(self.workspace / "system" / "rish-install.sh"), rish_cmd)
         mock_dexopt.assert_called_once()
-        # LAUNCH_APP_AFTER_MOUNT defaults on: a post-install `rish -c am start`
-        # launch is expected, but it must never fall through to the
+
+        call_kwargs = mock_run_command.call_args.kwargs
+        self.assertIn("ENHANCIFY_CONFIG_FILE", call_kwargs["env"])
+        self.assertIn("RISH_APPLICATION_ID", call_kwargs["env"])
+        self.assertGreaterEqual(call_kwargs["timeout"], 300)
+
+        # LAUNCH_APP_AFTER_MOUNT defaults on: a post-install launch via the
+        # rish gateway is expected, but it must never fall through to the
         # non-privilege termux-open export path.
-        mock_subproc.assert_called_once()
-        self.assertEqual(mock_subproc.call_args[0][0][0], "rish")
+        mock_run_rish.assert_called_once()
+
+    def test_rish_mode_reports_dex_failure_without_failing_the_install(self):
+        with (
+            patch("src.installer.run_command") as mock_run_command,
+            patch.object(self.installer, "run_dex_optimization") as mock_dexopt,
+            patch("src.installer.run_rish"),
+        ):
+            mock_run_command.return_value = (0, "Install succeeded.", "")
+            mock_dexopt.return_value = (False, "Package not found: com.test.app")
+
+            ok, msg = self.installer.install_or_export(
+                self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
+                has_root=False, has_rish=True,
+            )
+
+        self.assertTrue(ok)
+        self.assertIn("DEX optimization failed", msg)
+        self.assertIn("Package not found", msg)
+
+    def test_rish_mode_clears_stale_result_files(self):
+        storage = self.workspace / "storage"
+        storage.mkdir(parents=True, exist_ok=True)
+        (storage / "install_type.txt").write_text("update")
+        (storage / "rish_log.txt").write_text("stale log")
+        (storage / "install_error.txt").write_text("stale error")
+
+        with patch("src.installer.run_command", return_value=(1, "", "")):
+            ok, msg = self.installer.install_or_export(
+                self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
+                has_root=False, has_rish=True,
+            )
+
+        self.assertFalse(ok)
+        self.assertIn("no output", msg)
+        self.assertFalse((storage / "install_type.txt").exists())
+        self.assertFalse((storage / "rish_log.txt").exists())
+        self.assertFalse((storage / "install_error.txt").exists())
 
     def test_non_privilege_mode_exports_and_never_touches_rish(self):
         with (
@@ -85,7 +138,7 @@ class TestInstallModeRouting(unittest.TestCase):
 
     def test_root_mode_mounts_via_su_and_skips_rish(self):
         with patch("src.installer.run_command") as mock_run_command:
-            mock_run_command.return_value = (0, "mounted", "")
+            mock_run_command.return_value = (0, "Mounted.", "")
 
             ok, msg = self.installer.install_or_export(
                 self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
@@ -94,9 +147,82 @@ class TestInstallModeRouting(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertIn("Root", msg)
-        mock_run_command.assert_called_once()
         mount_cmd = mock_run_command.call_args[0][0]
         self.assertEqual(mount_cmd[0], "su")
+
+
+class TestDexOptimization(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.workspace = Path(self.temp_dir)
+        self.installer = AppInstaller(workspace_dir=self.workspace)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_dex_optimization_fails_on_rc0_error_text(self):
+        """rish exits 0 even when the inner command failed - a returncode
+        check alone can never observe this."""
+        with patch(
+            "src.installer.run_rish",
+            return_value=(0, "", "Error: Package not found: com.test.app"),
+        ):
+            ok, msg = self.installer.run_dex_optimization("com.test.app")
+
+        self.assertFalse(ok)
+        self.assertIn("Package not found", msg)
+
+    def test_dex_optimization_requires_applied_status(self):
+        def fake_run_rish(cmd, timeout=60):
+            if cmd.startswith("cmd package compile"):
+                return 0, "", ""
+            return 0, "arm64: [status=verify] [reason=vdex]", ""
+
+        with patch("src.installer.run_rish", side_effect=fake_run_rish):
+            ok, msg = self.installer.run_dex_optimization("com.test.app", install_type="update")
+
+        self.assertFalse(ok)
+
+        def fake_run_rish_ok(cmd, timeout=60):
+            if cmd.startswith("cmd package compile"):
+                return 0, "", ""
+            return 0, "arm64: [status=speed] [reason=cmdline]", ""
+
+        with patch("src.installer.run_rish", side_effect=fake_run_rish_ok):
+            ok, msg = self.installer.run_dex_optimization("com.test.app", install_type="update")
+
+        self.assertTrue(ok)
+
+    def test_dex_optimization_falls_back_when_filter_invalid(self):
+        calls = []
+
+        def fake_run_rish(cmd, timeout=60):
+            calls.append(cmd)
+            if cmd.startswith("cmd package compile"):
+                if "quicken" in cmd:
+                    return 0, "Error: Invalid compiler filter 'quicken'", ""
+                return 0, "", ""
+            return 0, "arm64: [status=speed] [reason=cmdline]", ""
+
+        with patch("src.installer.run_rish", side_effect=fake_run_rish):
+            ok, msg = self.installer.run_dex_optimization("com.test.app", install_type="new")
+
+        self.assertTrue(ok)
+        compile_calls = [c for c in calls if c.startswith("cmd package compile")]
+        self.assertEqual(len(compile_calls), 2)
+        self.assertIn("-m speed", compile_calls[1])
+
+    def test_dex_optimization_accepts_unknown_dumpsys_format(self):
+        def fake_run_rish(cmd, timeout=60):
+            if cmd.startswith("cmd package compile"):
+                return 0, "", ""
+            return 0, "Dexopt state: (nothing parseable)", ""
+
+        with patch("src.installer.run_rish", side_effect=fake_run_rish):
+            ok, msg = self.installer.run_dex_optimization("com.test.app", install_type="update")
+
+        self.assertTrue(ok)
+        self.assertIn("status unverified", msg)
 
 
 if __name__ == "__main__":
