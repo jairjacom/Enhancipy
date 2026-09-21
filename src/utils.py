@@ -400,3 +400,54 @@ def run_command(
         return 124, "", "Command timed out"
     except Exception as e:
         return 1, "", str(e)
+
+
+RISH_MARKER = "ENH_RISH_OK"
+_RISH_BANNER_RE = re.compile(r"(?im)^[ \t]*entering shell\.*[ \t]*\r?$\n?")
+
+
+def strip_rish_banner(text: str) -> str:
+    """Remove rish's 'Entering shell...' banner lines and CRs from captured output."""
+    return _RISH_BANNER_RE.sub("", text or "").replace("\r", "")
+
+
+def rish_environ(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Env overlay for rish: fill RISH_APPLICATION_ID / MANAGER_APPLICATION_ID when unset.
+
+    /usr/bin/rish defaults RISH_APPLICATION_ID to the literal "PKG" when it is
+    unset, which makes Shizuku hand back nothing at all while rish still
+    exits 0 (silent no-op).
+    """
+    env_vars: Dict[str, str] = {}
+    if not os.environ.get("RISH_APPLICATION_ID"):
+        env_vars["RISH_APPLICATION_ID"] = "com.termux"
+    if not os.environ.get("MANAGER_APPLICATION_ID"):
+        env_vars["MANAGER_APPLICATION_ID"] = "moe.shizuku.privileged.api"
+    if extra:
+        env_vars.update(extra)
+    return env_vars
+
+
+def run_rish(shell_cmd: str, timeout: int = 60) -> Tuple[int, str, str]:
+    """Run one command through rish. Returns (returncode, clean_stdout, clean_stderr).
+
+    NOTE: rish exits 0 regardless of the inner command's status (verified:
+    `rish -c "exit 7"` -> 0), so callers MUST decide on output text, not
+    returncode. A non-zero code here means rish/app_process itself failed or
+    timed out.
+    """
+    code, out, err = run_command(["rish", "-c", shell_cmd], timeout=timeout, env=rish_environ())
+    return code, strip_rish_banner(out), strip_rish_banner(err)
+
+
+def rish_available(timeout: int = 8) -> bool:
+    """True only if rish actually executed our command (marker echoed back).
+
+    Returncode is useless (always 0); an unauthorized/misconfigured rish
+    returns 0 with empty output. Timeout budget must stay well above the
+    measured ~1.0s app_process/Shizuku startup cost.
+    """
+    if shutil.which("rish") is None:
+        return False
+    code, out, err = run_rish(f"echo {RISH_MARKER}", timeout=timeout)
+    return code == 0 and RISH_MARKER in (out + err)

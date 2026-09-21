@@ -97,7 +97,43 @@ grepped for any prior working-dir name — none found).
 
 ## Open items / next session
 
-- Pending: user's own on-device patch runs — findings to be appended here
-  as they come in.
 - Fixed this session: Rish-mode installs silently ignored the user's
-  `.config` (see commit 6 above). No other known bugs at time of writing.
+  `.config` (see commit 6 above).
+- Fixed (this session, follow-up): Rish detection/install path was
+  fundamentally broken despite passing tests, root-caused via live device
+  probing (SDK 37 device, `~/EnhanciPy`):
+  - `check_privileges()`'s rish probe used `timeout=1` against a measured
+    ~1.0s `rish -c` round trip → `TimeoutExpired` → false `Non-privilege
+    Mode` → every install fell through to the `termux-open` export branch,
+    never touching `rish-install.sh` or dexopt.
+  - `rish` **always exits 0** regardless of the inner command's outcome
+    (`rish -c "exit 7"` → rc 0). Every `code != 0` check on a rish command
+    was dead code (`run_dex_optimization`, the install-script exit code).
+    Real failures are text-only, sometimes split across stdout/stderr, and
+    always prefixed with an `Entering shell...` banner.
+  - `rish` silently no-ops (rc 0, empty output) when `RISH_APPLICATION_ID`
+    is unset — it defaults to the literal string `"PKG"`. Any non-login
+    shell/process without that var exported reproduces total silent
+    failure.
+  - Fix: `src/utils.py` gained `run_rish`/`rish_available`/`rish_environ`/
+    `strip_rish_banner` — rish detection is now marker-based
+    (`echo ENH_RISH_OK` round trip, not returncode), `RISH_APPLICATION_ID`/
+    `MANAGER_APPLICATION_ID` are defaulted when unset, and all rish output
+    consumers read text, not exit codes. `run_dex_optimization` now returns
+    `(bool, str)` and verifies the applied compiler filter via `dumpsys`
+    with a `quicken → speed` fallback and an "unverified" escape hatch for
+    unfamiliar `dumpsys` formats. `system/rish-install.sh` gates
+    `--skip-verification`/`--bypass-low-target-sdk-block` on `getprop
+    ro.build.version.sdk >= 34` and retries once without them if `pm`
+    rejects the flags. Stale `install_type.txt`/`rish_log.txt`/
+    `install_error.txt` are now cleared before every rish install attempt.
+  - New `tests/test_rish_script.py` exercises the actual shell script
+    (not a Python re-implementation) against a stub `rish` binary
+    impersonating SDK 33/34/36 — the only coverage for Android versions
+    other than the one physical device available this session.
+  - Verified live on-device: `check_privileges(refresh=True)` now returns
+    `(False, True, 'Rish Mode')` (previously `Non-privilege Mode`);
+    `rish_available()` correctly returns `False` under
+    `RISH_APPLICATION_ID=PKG` (the silent-no-op signature);
+    `run_dex_optimization('com.does.not.exist')` correctly returns
+    `(False, 'Error: Package not found: ...')`. Full suite: 91/91 passing.

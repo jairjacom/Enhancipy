@@ -17,6 +17,9 @@ rish() {
     return "$_rish_rc"
 }
 
+[ -z "$RISH_APPLICATION_ID" ] && export RISH_APPLICATION_ID="com.termux"
+[ -z "$MANAGER_APPLICATION_ID" ] && export MANAGER_APPLICATION_ID="moe.shizuku.privileged.api"
+
 PKG_NAME="$1"
 APP_NAME="$2"
 EXPORTED_APK_NAME="$3"
@@ -103,22 +106,42 @@ if [ "$(rish -c "[ -e $PATCHED_APP_PATH ] && echo Exists || echo Missing")" == "
     exit 1
 fi
 
+DEVICE_SDK=$(rish -c "getprop ro.build.version.sdk" 2>/dev/null | tr -cd '0-9')
+DEVICE_SDK=${DEVICE_SDK:-0}
+log "Device SDK: $DEVICE_SDK"
+
 INSTALL_FLAGS=""
 
 if [ "$SKIP_VERIFICATION" == "on" ]; then
-    INSTALL_FLAGS="$INSTALL_FLAGS --skip-verification"
-    log "Adding flag: --skip-verification"
+    if [ "$DEVICE_SDK" -ge 34 ]; then
+        INSTALL_FLAGS="$INSTALL_FLAGS --skip-verification"
+        log "Adding flag: --skip-verification"
+    else
+        log "Skipping --skip-verification (needs SDK 34+, device is $DEVICE_SDK)"
+    fi
 fi
 
 if [ "$BYPASS_LOW_TARGET_SDK_BLOCK" == "on" ]; then
-    INSTALL_FLAGS="$INSTALL_FLAGS --bypass-low-target-sdk-block"
-    log "Adding flag: --bypass-low-target-sdk-block"
+    if [ "$DEVICE_SDK" -ge 34 ]; then
+        INSTALL_FLAGS="$INSTALL_FLAGS --bypass-low-target-sdk-block"
+        log "Adding flag: --bypass-low-target-sdk-block"
+    else
+        log "Skipping --bypass-low-target-sdk-block (needs SDK 34+, device is $DEVICE_SDK)"
+    fi
 fi
 
 CMD_RISH="pm install -r -i com.android.vending$INSTALL_FLAGS --user current $PATCHED_APP_PATH"
 OUTPUT=$(rish -c "$CMD_RISH" 2>&1)
 log "Install command: $CMD_RISH"
 log "Install output: $OUTPUT"
+
+if [ -n "$INSTALL_FLAGS" ] && echo "$OUTPUT" | grep -qi -e "Unknown option" -e "Unrecognized option" -e "Bad argument"; then
+    log "pm rejected install flags on this Android version - retrying without them"
+    CMD_RISH="pm install -r -i com.android.vending --user current $PATCHED_APP_PATH"
+    OUTPUT=$(rish -c "$CMD_RISH" 2>&1)
+    log "Retry install command: $CMD_RISH"
+    log "Retry install output: $OUTPUT"
+fi
 
 parse_install_failure() {
     local output="$1"

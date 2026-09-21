@@ -17,7 +17,18 @@ from typing import Callable, Optional, Tuple
 
 from src.config import config
 from src.environment import env
-from src.utils import run_command
+from src.utils import rish_environ, run_command, run_rish
+
+
+_RISH_ERROR_RE = re.compile(r"(?im)^\s*(?:error|failure)\b|invalid compiler filter|package not found")
+
+
+def _first_rish_error_line(text: str) -> Optional[str]:
+    """Return the first line of rish output that looks like a real error."""
+    for line in text.splitlines():
+        if _RISH_ERROR_RE.search(line):
+            return line.strip()
+    return None
 
 
 class AppInstaller:
@@ -196,35 +207,61 @@ class AppInstaller:
 
     # --- Mode-Specific Installation ---
 
-    def run_dex_optimization(self, pkg_name: str, install_type: str = "new") -> bool:
-        """Run dex optimization via Rish.
+    def run_dex_optimization(self, pkg_name: str, install_type: str = "new") -> Tuple[bool, str]:
+        """Run dex optimization via Rish and verify it actually applied.
 
-        Some ART versions (e.g. newer Android releases) silently no-op
-        deprecated filters like "quicken" while still returning success.
-        Verify the filter actually applied and fall back to "speed" if not.
+        rish always exits 0 regardless of the inner command's outcome
+        (verified: `rish -c "exit 7"` -> 0), so success/failure is read from
+        the rish output text, and the applied compiler filter is confirmed
+        via dumpsys instead of trusted from the compile call alone.
         """
-        # AOT ("speed") compilation of large APKs can take well over 30s via
-        # rish/dex2oat, so compile calls get a generous timeout; dumpsys is a
-        # quick status query and keeps the short one.
-        profile_mode = "speed" if install_type == "update" else "quicken"
-        force_flag = "-f" if install_type == "update" else ""
-        cmd = ["rish", "-c", f"cmd package compile -m {profile_mode} {force_flag} {pkg_name}"]
-        code, out, _ = run_command(cmd, timeout=180)
-        if code != 0:
-            return False
+        # "quicken" was removed from the compiler-filter set on some ART
+        # versions; try it first (cheap) on a fresh install and fall back to
+        # "speed" (full AOT) if it's rejected or doesn't apply. Updates go
+        # straight to a forced "speed" recompile.
+        candidates = ["speed"] if install_type == "update" else ["quicken", "speed"]
 
-        if profile_mode != "speed":
-            _, status_out, status_err = run_command(["rish", "-c", f"dumpsys package {pkg_name}"], timeout=30)
-            # rish writes its real output to stderr (not stdout) when run
-            # without a TTY, as happens under subprocess - check both streams.
-            match = re.search(r"\[status=([^\]]+)\]", status_out + status_err)
-            applied_status = match.group(1) if match else None
-            if applied_status in (None, "verify"):
-                fallback_cmd = ["rish", "-c", f"cmd package compile -m speed -f {pkg_name}"]
-                code, out, _ = run_command(fallback_cmd, timeout=180)
-                return code == 0
+        last_reason = "compile filter never applied"
+        for index, mode in enumerate(candidates):
+            force = "-f" if (install_type == "update" or index > 0) else ""
+            compile_cmd = f"cmd package compile -m {mode} {force} {pkg_name}".replace("  ", " ").strip()
+            # AOT ("speed") compilation of a large APK can take well over a
+            # minute via rish/dex2oat, so compile calls get a generous budget.
+            code, out, err = run_rish(compile_cmd, timeout=900)
+            combined = out + err
 
-        return True
+            if code == 124:
+                last_reason = "rish timed out"
+                continue
+
+            error_line = _first_rish_error_line(combined)
+            if code != 0 or error_line:
+                last_reason = error_line or f"rish exited {code}"
+                if "package not found" in combined.lower():
+                    return False, last_reason
+                continue
+
+            # dumpsys is a quick status query and keeps a short timeout.
+            _, status_out, status_err = run_rish(f"dumpsys package {pkg_name}", timeout=60)
+            pairs = re.findall(r"\[status=([^\]]+)\]\s*\[reason=([^\]]+)\]", status_out + status_err)
+
+            if not pairs:
+                # An unfamiliar dumpsys format (different Android release) is
+                # not a dexopt failure - the compile attempt itself produced
+                # no error text.
+                return True, f"DEX optimized ({mode}, status unverified)"
+
+            applied = any(
+                (reason == "cmdline" and status == mode)
+                or status in ("speed", "speed-profile", "everything")
+                for status, reason in pairs
+            )
+            if applied:
+                return True, f"DEX optimized ({mode})"
+
+            last_reason = f"filter '{mode}' did not apply (dumpsys: {pairs[-1]})"
+
+        return False, last_reason
 
     def install_or_export(
         self,
@@ -276,31 +313,49 @@ class AppInstaller:
             rish_script = self.system_dir / "rish-install.sh"
             if rish_script.exists():
                 install_error_file = self.storage_dir / "install_error.txt"
+                install_type_file = self.storage_dir / "install_type.txt"
+                rish_log_file = self.storage_dir / "rish_log.txt"
                 install_error_file.unlink(missing_ok=True)
+                install_type_file.unlink(missing_ok=True)
+                rish_log_file.unlink(missing_ok=True)
 
                 cmd = ["bash", str(rish_script), pkg_name, app_name, exported_name, str(self.storage_dir)]
-                code, out, err = run_command(cmd, timeout=60, env={"ENHANCIFY_CONFIG_FILE": str(config.config_file)})
+                # The script performs ~8 rish round trips, moves a large APK,
+                # then runs pm install - a short timeout can clip a slow
+                # install into a bogus 124.
+                code, out, err = run_command(
+                    cmd,
+                    timeout=600,
+                    env=rish_environ({"ENHANCIFY_CONFIG_FILE": str(config.config_file)}),
+                )
                 if code == 0:
                     install_type = "new"
-                    install_type_file = self.storage_dir / "install_type.txt"
                     if install_type_file.exists():
                         install_type = install_type_file.read_text().strip() or "new"
 
                     # Run DEX Optimization
                     if progress_callback:
                         progress_callback("Running DEX Optimization via Rish...")
-                    self.run_dex_optimization(pkg_name, install_type)
+                    dex_ok, dex_msg = self.run_dex_optimization(pkg_name, install_type)
 
                     if config.is_on("LAUNCH_APP_AFTER_MOUNT"):
-                        launch_cmd = f"pm resolve-activity --brief {pkg_name} | tail -n 1 | xargs am start -n"
-                        subprocess.run(["rish", "-c", launch_cmd], capture_output=True)
-                    return True, f"{app_name} installed successfully via Rish with Dex Optimization!"
+                        run_rish(
+                            f"pm resolve-activity --brief {pkg_name} | tail -n 1 | xargs am start -n",
+                            timeout=60,
+                        )
+
+                    if dex_ok:
+                        return True, f"{app_name} installed successfully via Rish with Dex Optimization!"
+                    return True, f"{app_name} installed via Rish, but DEX optimization failed: {dex_msg}"
 
                 if install_error_file.exists():
                     reason = install_error_file.read_text().strip()
                     if reason:
                         return False, f"Rish installation failed: {reason}"
-                return False, f"Rish installation failed: {err or out}"
+                reason = (err or out).strip()
+                if not reason:
+                    return False, "Rish installation failed: rish produced no output (Shizuku not authorized?)"
+                return False, f"Rish installation failed: {reason}"
             return False, "rish-install.sh script not found!"
 
         # 4. Non-Privilege Mode (Copy to Internal Storage)
@@ -318,7 +373,7 @@ class AppInstaller:
                 # Try opening with termux-open
                 if shutil.which("termux-open"):
                     subprocess.run(["termux-open", "--view", str(target_storage_apk)], capture_output=True)
-                return True, f"Patched APK exported to:\n{target_storage_apk}"
+                return True, f"Non-privilege Mode — patched APK exported to:\n{target_storage_apk}"
             except Exception as e:
                 return False, f"Failed to export APK: {e}"
 

@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
+from src.utils import rish_available
+
 
 @dataclass
 class DeviceSpecs:
@@ -137,7 +139,7 @@ class Environment:
         # Check Root access
         has_root = False
         try:
-            res = subprocess.run(["su", "-c", "exit"], capture_output=True, timeout=1)
+            res = subprocess.run(["su", "-c", "exit"], capture_output=True, timeout=5)
             if res.returncode == 0:
                 has_root = True
         except Exception:
@@ -148,13 +150,7 @@ class Environment:
             return self._cached_privileges
 
         # Check Rish access
-        has_rish = False
-        try:
-            res = subprocess.run(["rish", "-c", "exit"], capture_output=True, timeout=1)
-            if res.returncode == 0:
-                has_rish = True
-        except Exception:
-            has_rish = False
+        has_rish = rish_available()
 
         if has_rish:
             self._cached_privileges = (False, True, "Rish Mode")
