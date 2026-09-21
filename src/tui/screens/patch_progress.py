@@ -20,11 +20,11 @@ from textual.widgets import Button, Footer, Label, ProgressBar, RichLog, Static
 from src.assets import assets_mgr
 from src.config import config
 from src.environment import env
-from src.installer import app_installer
+from src.installer import CONFLICT_VERSION_DOWNGRADE, InstallResult, app_installer, rish_export_name
 from src.patcher import PatchExecutionConfig, patcher_engine
 from src.theme import palette
 from src.tui.screens.main_menu import MainMenuScreen
-from src.tui.widgets.dialogs import MessageDialog, ProgressModal
+from src.tui.widgets.dialogs import ConfirmDialog, MessageDialog, ProgressModal
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
@@ -43,6 +43,7 @@ class PatchProgressScreen(Screen):
         self.patch_in_progress = False
         self.patch_success = False
         self.output_apk: Optional[Path] = None
+        self._install_ctx: dict = {}
 
     def compose(self) -> ComposeResult:
         has_root, has_rish, mode_label = env.check_privileges()
@@ -210,6 +211,13 @@ class PatchProgressScreen(Screen):
 
         has_root, has_rish, _ = env.check_privileges(refresh=True)
 
+        self._install_ctx = {
+            "app_name": app_name,
+            "pkg_name": pkg_name,
+            "app_ver": app_ver,
+            "source_name": source_name,
+        }
+
         modal = ProgressModal("Installing APK", "Finalizing, signing, and installing APK...")
         self.app.push_screen(modal)
         self.run_install_worker(modal, app_name, pkg_name, app_ver, source_name, has_root, has_rish)
@@ -226,7 +234,7 @@ class PatchProgressScreen(Screen):
         has_rish: bool,
     ) -> None:
         try:
-            ok, msg = app_installer.install_or_export(
+            res = app_installer.install_or_export(
                 self.output_apk,
                 app_name,
                 pkg_name,
@@ -237,15 +245,92 @@ class PatchProgressScreen(Screen):
                 progress_callback=lambda m: modal.update_message(m),
             )
             self.app.call_from_thread(modal.safe_dismiss)
-            if ok:
+            if res.ok:
                 self.app.call_from_thread(
                     self.app.push_screen,
-                    MessageDialog("Installation Result", msg)
+                    MessageDialog("Installation Result", res.message)
+                )
+            elif res.conflict == CONFLICT_VERSION_DOWNGRADE:
+                self.app.call_from_thread(self._prompt_downgrade, res)
+            else:
+                self.app.call_from_thread(
+                    self.app.push_screen,
+                    MessageDialog("Installation Error", res.message)
+                )
+        except Exception as e:
+            self.app.call_from_thread(modal.safe_dismiss)
+            self.app.call_from_thread(
+                self.app.push_screen,
+                MessageDialog("Error", f"Installation error: {e}")
+            )
+
+    def _prompt_downgrade(self, res: InstallResult) -> None:
+        """Offer to uninstall the currently installed app and reinstall the
+        patched APK after rish reported INSTALL_FAILED_VERSION_DOWNGRADE."""
+        app_name = self._install_ctx.get("app_name", "the app")
+        exported_name = res.exported_name or rish_export_name(
+            app_name,
+            self._install_ctx.get("app_ver", "1.0"),
+            self._install_ctx.get("source_name", ""),
+        )
+        self._install_ctx["exported_name"] = exported_name
+
+        message = (
+            f"{res.message}\n\n"
+            f"Uninstall the currently installed {app_name} and install the patched version?\n\n"
+            "WARNING: uninstalling deletes that app's data (logins, settings)."
+        )
+        if not config.is_on("ALLOW_APP_VERSION_DOWNGRADE"):
+            message += (
+                "\n\nTip: enable Settings > Allow Version Downgrades to try a "
+                "data-preserving downgrade first."
+            )
+
+        self.app.push_screen(
+            ConfirmDialog(
+                "Version Downgrade Detected",
+                message,
+                yes_label="Yes, Uninstall & Install",
+                no_label="No, Cancel",
+                yes_class="btn-success",
+                no_class="btn-danger",
+            ),
+            self._on_downgrade_confirm,
+        )
+
+    def _on_downgrade_confirm(self, confirmed: Optional[bool]) -> None:
+        if not confirmed:
+            self.app.push_screen(
+                MessageDialog(
+                    "Installation Cancelled",
+                    "The patched APK was left in Internal Storage; nothing was uninstalled.",
+                )
+            )
+            return
+
+        modal = ProgressModal("Resolving Conflict", "Uninstalling current version...")
+        self.app.push_screen(modal)
+        self.run_uninstall_install_worker(modal)
+
+    @work(thread=True)
+    def run_uninstall_install_worker(self, modal: ProgressModal) -> None:
+        try:
+            res = app_installer.uninstall_and_reinstall(
+                self._install_ctx.get("app_name", ""),
+                self._install_ctx.get("pkg_name", ""),
+                self._install_ctx.get("exported_name", ""),
+                progress_callback=lambda m: modal.update_message(m),
+            )
+            self.app.call_from_thread(modal.safe_dismiss)
+            if res.ok:
+                self.app.call_from_thread(
+                    self.app.push_screen,
+                    MessageDialog("Installation Result", res.message)
                 )
             else:
                 self.app.call_from_thread(
                     self.app.push_screen,
-                    MessageDialog("Installation Error", msg)
+                    MessageDialog("Installation Error", res.message)
                 )
         except Exception as e:
             self.app.call_from_thread(modal.safe_dismiss)

@@ -42,6 +42,7 @@ case "$CMD" in
                     echo "Error: Unknown option: --skip-verification"; exit 0 ;;
             esac
         fi
+        if [ -n "$STUB_INSTALL_OUTPUT" ]; then echo "$STUB_INSTALL_OUTPUT"; exit 0; fi
         echo "Success" ;;
     *"-d '/data/local/tmp/enhancify'"*) echo "Exists" ;;
     *"[ -e "*) echo "Exists" ;;
@@ -68,7 +69,7 @@ class RishScriptTestCase(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _run(self, sdk, reject_flags=False, config_text=None, unset_env=None):
+    def _run(self, sdk, reject_flags=False, config_text=None, unset_env=None, install_output=None):
         if config_text is not None:
             self.config_file.write_text(config_text)
 
@@ -78,6 +79,8 @@ class RishScriptTestCase(unittest.TestCase):
         env["STUB_LOG"] = str(self.stub_log)
         env["STUB_REJECT_FLAGS"] = "1" if reject_flags else "0"
         env["ENHANCIFY_CONFIG_FILE"] = str(self.config_file)
+        if install_output is not None:
+            env["STUB_INSTALL_OUTPUT"] = install_output
         for key in unset_env or ():
             env.pop(key, None)
 
@@ -158,6 +161,49 @@ class RishScriptTestCase(unittest.TestCase):
         result = self._run(sdk=35, unset_env=["RISH_APPLICATION_ID", "MANAGER_APPLICATION_ID"])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("RISH_APPLICATION_ID=com.termux", self._log_lines())
+
+    def test_downgrade_flag_added_when_config_allows(self):
+        result = self._run(
+            sdk=34,
+            config_text="ALLOW_APP_VERSION_DOWNGRADE='on'\n",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        install_lines = self._install_lines()
+        self.assertEqual(len(install_lines), 1)
+        self.assertIn(" -d ", install_lines[0])
+        self.assertIn("Adding flag: -d", self._rish_log())
+
+    def test_downgrade_flag_absent_by_default(self):
+        result = self._run(sdk=34, config_text="SOURCE='Anddea'\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        install_lines = self._install_lines()
+        self.assertEqual(len(install_lines), 1)
+        self.assertNotIn(" -d ", install_lines[0])
+
+    def test_downgrade_failure_writes_failure_code(self):
+        result = self._run(
+            sdk=34,
+            install_output=(
+                "Failure [INSTALL_FAILED_VERSION_DOWNGRADE: Downgrade detected: "
+                "Update version code 312270001 is older than current 312271001]"
+            ),
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+        self.assertEqual(
+            (self.storage / "install_failure_code.txt").read_text().strip(),
+            "INSTALL_FAILED_VERSION_DOWNGRADE",
+        )
+        self.assertIn("Downgrade detected", (self.storage / "install_error.txt").read_text())
+
+    def test_success_clears_failure_code(self):
+        (self.storage / "install_failure_code.txt").write_text("INSTALL_FAILED_VERSION_DOWNGRADE")
+        result = self._run(sdk=34)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.storage / "install_failure_code.txt").exists())
+
 
 
 if __name__ == "__main__":

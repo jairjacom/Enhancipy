@@ -85,6 +85,8 @@ class ConfirmDialog(ModalScreen[bool]):
         message: str,
         yes_label: str = "Yes",
         no_label: str = "No",
+        yes_class: str = "btn-primary",
+        no_class: str = "btn-secondary",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -92,14 +94,16 @@ class ConfirmDialog(ModalScreen[bool]):
         self.message = message
         self.yes_label = yes_label
         self.no_label = no_label
+        self.yes_class = yes_class
+        self.no_class = no_class
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog-box"):
             yield Label(self.dialog_title, classes="dialog-title")
             yield Label(self.message, classes="dialog-message")
             with ButtonBar(classes="dialog-buttons"):
-                yield Button(self.yes_label, id="btn-yes", classes="btn-primary")
-                yield Button(self.no_label, id="btn-no", classes="btn-secondary")
+                yield Button(self.yes_label, id="btn-yes", classes=self.yes_class)
+                yield Button(self.no_label, id="btn-no", classes=self.no_class)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-yes":

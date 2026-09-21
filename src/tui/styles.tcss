@@ -267,6 +267,17 @@ Button.btn-danger:focus {
     color: $enh-on-dark;
 }
 
+Button.btn-success {
+    background: #05240f;
+    border: round $enh-success;
+    color: $enh-success;
+}
+
+Button.btn-success:focus {
+    background: $enh-success;
+    color: $enh-on-dark;
+}
+
 Button.btn-secondary {
     background: #1f242c;
     border: round $enh-muted;
