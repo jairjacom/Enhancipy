@@ -111,17 +111,27 @@ class Environment:
             return first_line.strip("'\"")
         return "v1.0.0"
 
-    def check_privileges(self, force_root: Optional[bool] = None, force_rish: Optional[bool] = None) -> Tuple[bool, bool, str]:
+    def check_privileges(
+        self,
+        force_root: Optional[bool] = None,
+        force_rish: Optional[bool] = None,
+        refresh: bool = False,
+    ) -> Tuple[bool, bool, str]:
         """
         Check privilege level.
         Returns: (has_root, has_rish, mode_label)
+
+        Results are cached after the first probe. Pass refresh=True to bypass
+        the cache and re-probe live (rish/Shizuku may not be attached yet on
+        the very first app-boot probe, so callers making an install decision
+        must not trust a stale negative result).
         """
         if force_root is True:
             return True, False, "Root Mode"
         if force_rish is True:
             return False, True, "Rish Mode"
 
-        if self._cached_privileges is not None:
+        if self._cached_privileges is not None and not refresh:
             return self._cached_privileges
 
         # Check Root access

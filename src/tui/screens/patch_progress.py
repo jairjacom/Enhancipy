@@ -208,7 +208,7 @@ class PatchProgressScreen(Screen):
         pkg_name = app_info.get("pkgName", "")
         source_name = config.get("SOURCE", "Anddea")
 
-        has_root, has_rish, _ = env.check_privileges()
+        has_root, has_rish, _ = env.check_privileges(refresh=True)
 
         modal = ProgressModal("Installing APK", "Finalizing, signing, and installing APK...")
         self.app.push_screen(modal)
