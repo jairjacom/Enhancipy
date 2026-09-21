@@ -37,6 +37,7 @@ STATIC_TOKENS: Dict[str, str] = {
     "warning": "#ffd700",   # tags, cautions
     "tag": "#d2a8ff",       # custom-source / meta tags
     "on_dark": "#ffffff",   # text on strong accent fills
+    "success": "#2ea043",   # confirm/allow actions (e.g. downgrade-conflict Yes)
 }
 
 
@@ -269,38 +270,3 @@ def css_variables(theme: Optional[ThemeInfo] = None) -> Dict[str, str]:
     return {f"enh-{k.replace('_', '-')}": v for k, v in palette(theme).items()}
 
 
-THEME_MAP: Dict[str, ThemeInfo] = {t.id: t for t in THEMES}
-
-
-def get_current_theme() -> ThemeInfo:
-    """Read active theme from configuration."""
-    theme_id = config.get("THEME_ID", "")
-    if theme_id and theme_id in THEME_MAP:
-        return THEME_MAP[theme_id]
-
-    # Fallback to GREEN_THEME legacy toggle
-    if config.is_on("GREEN_THEME"):
-        return THEME_MAP["cyber_green"]
-    elif config.is_on("DARK_THEME"):
-        return THEME_MAP["oled_midnight"]
-    return THEME_MAP["cyber_green"]
-
-
-def set_current_theme(theme_id: str) -> bool:
-    """Save active theme to config."""
-    if theme_id not in THEME_MAP:
-        return False
-
-    theme = THEME_MAP[theme_id]
-    config.set("THEME_ID", theme.id)
-    config.set("THEME", theme.name)
-
-    # Maintain legacy toggles
-    if theme.id == "cyber_green":
-        config.set("GREEN_THEME", "on")
-        config.set("DARK_THEME", "off")
-    else:
-        config.set("GREEN_THEME", "off")
-        config.set("DARK_THEME", "on")
-
-    return True

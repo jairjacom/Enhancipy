@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Callable, NamedTuple, Optional, Tuple
 
 from src.config import config
 from src.environment import env
@@ -29,6 +29,28 @@ def _first_rish_error_line(text: str) -> Optional[str]:
         if _RISH_ERROR_RE.search(line):
             return line.strip()
     return None
+
+
+CONFLICT_VERSION_DOWNGRADE = "version_downgrade"
+
+
+class InstallResult(NamedTuple):
+    """Outcome of install_or_export / uninstall_and_reinstall.
+
+    `conflict` is a machine-readable reason the caller can act on (currently
+    only CONFLICT_VERSION_DOWNGRADE); `exported_name` is the staged APK's
+    name so the UI can retry the rish script after resolving the conflict.
+    """
+
+    ok: bool
+    message: str
+    conflict: Optional[str] = None
+    exported_name: Optional[str] = None
+
+
+def rish_export_name(app_name: str, app_ver: str, source_name: str) -> str:
+    """Staged APK base name (no .apk) shared by install_or_export and retries."""
+    return f"{app_name}-{app_ver.replace(':', '')}-{source_name}"
 
 
 class AppInstaller:
@@ -273,14 +295,14 @@ class AppInstaller:
         has_root: bool,
         has_rish: bool,
         progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> Tuple[bool, str]:
+    ) -> InstallResult:
         """Finalize APK, realign, sign, and install/export according to privilege level."""
         # 1. Realign APK if custom keystore is used
         if config.is_on("Use_CUSTOM_KEYSTORE"):
             self.realign_apk(apk_path, progress_callback)
             ok, msg = self.sign_with_custom_keystore(apk_path, progress_callback)
             if not ok:
-                return False, f"Signing failed: {msg}"
+                return InstallResult(False, f"Signing failed: {msg}")
 
         # 2. Root Mode Mount
         if has_root:
@@ -295,68 +317,29 @@ class AppInstaller:
                     if config.is_on("LAUNCH_APP_AFTER_MOUNT"):
                         launch_cmd = f"settings list secure | sed -n -e 's/\\/.*//' -e 's/default_input_method=//p' | xargs pidof | xargs kill -9 && pm resolve-activity --brief {pkg_name} | tail -n 1 | xargs am start -n"
                         subprocess.run(["su", "-c", launch_cmd], capture_output=True)
-                    return True, f"{app_name} mounted successfully via Root!"
-                return False, f"Root mounting failed: {err or out}"
-            return False, "mount.sh script not found!"
+                    return InstallResult(True, f"{app_name} mounted successfully via Root!")
+                return InstallResult(False, f"Root mounting failed: {err or out}")
+            return InstallResult(False, "mount.sh script not found!")
 
         # 3. Rish Mode Installation
         elif has_rish:
             if progress_callback:
                 progress_callback("Installing patched APK via Rish...")
 
-            canonical_ver = app_ver.replace(":", "")
-            exported_name = f"{app_name}-{canonical_ver}-{source_name}"
+            exported_name = rish_export_name(app_name, app_ver, source_name)
             target_storage_apk = self.storage_dir / "Patched" / f"{exported_name}.apk"
             target_storage_apk.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(apk_path, target_storage_apk)
 
             rish_script = self.system_dir / "rish-install.sh"
-            if rish_script.exists():
-                install_error_file = self.storage_dir / "install_error.txt"
-                install_type_file = self.storage_dir / "install_type.txt"
-                rish_log_file = self.storage_dir / "rish_log.txt"
-                install_error_file.unlink(missing_ok=True)
-                install_type_file.unlink(missing_ok=True)
-                rish_log_file.unlink(missing_ok=True)
+            if not rish_script.exists():
+                return InstallResult(False, "rish-install.sh script not found!")
 
-                cmd = ["bash", str(rish_script), pkg_name, app_name, exported_name, str(self.storage_dir)]
-                # The script performs ~8 rish round trips, moves a large APK,
-                # then runs pm install - a short timeout can clip a slow
-                # install into a bogus 124.
-                code, out, err = run_command(
-                    cmd,
-                    timeout=600,
-                    env=rish_environ({"ENHANCIFY_CONFIG_FILE": str(config.config_file)}),
-                )
-                if code == 0:
-                    install_type = "new"
-                    if install_type_file.exists():
-                        install_type = install_type_file.read_text().strip() or "new"
-
-                    # Run DEX Optimization
-                    if progress_callback:
-                        progress_callback("Running DEX Optimization via Rish...")
-                    dex_ok, dex_msg = self.run_dex_optimization(pkg_name, install_type)
-
-                    if config.is_on("LAUNCH_APP_AFTER_MOUNT"):
-                        run_rish(
-                            f"pm resolve-activity --brief {pkg_name} | tail -n 1 | xargs am start -n",
-                            timeout=60,
-                        )
-
-                    if dex_ok:
-                        return True, f"{app_name} installed successfully via Rish with Dex Optimization!"
-                    return True, f"{app_name} installed via Rish, but DEX optimization failed: {dex_msg}"
-
-                if install_error_file.exists():
-                    reason = install_error_file.read_text().strip()
-                    if reason:
-                        return False, f"Rish installation failed: {reason}"
-                reason = (err or out).strip()
-                if not reason:
-                    return False, "Rish installation failed: rish produced no output (Shizuku not authorized?)"
-                return False, f"Rish installation failed: {reason}"
-            return False, "rish-install.sh script not found!"
+            self._clear_rish_result_files()
+            code, out, err = self._run_rish_script(pkg_name, app_name, exported_name)
+            if code == 0:
+                return self._finish_rish_install(app_name, pkg_name, progress_callback)
+            return self._rish_failure_result(exported_name, out, err)
 
         # 4. Non-Privilege Mode (Copy to Internal Storage)
         else:
@@ -373,9 +356,118 @@ class AppInstaller:
                 # Try opening with termux-open
                 if shutil.which("termux-open"):
                     subprocess.run(["termux-open", "--view", str(target_storage_apk)], capture_output=True)
-                return True, f"Non-privilege Mode — patched APK exported to:\n{target_storage_apk}"
+                return InstallResult(True, f"Non-privilege Mode — patched APK exported to:\n{target_storage_apk}")
             except Exception as e:
-                return False, f"Failed to export APK: {e}"
+                return InstallResult(False, f"Failed to export APK: {e}")
+
+    def _clear_rish_result_files(self) -> None:
+        """Unlink the three files rish-install.sh writes, so a stale result
+        from a previous run is never mistaken for this run's outcome."""
+        (self.storage_dir / "install_error.txt").unlink(missing_ok=True)
+        (self.storage_dir / "install_type.txt").unlink(missing_ok=True)
+        (self.storage_dir / "install_failure_code.txt").unlink(missing_ok=True)
+        (self.storage_dir / "rish_log.txt").unlink(missing_ok=True)
+
+    def _run_rish_script(self, pkg_name: str, app_name: str, exported_name: str) -> Tuple[int, str, str]:
+        """Invoke rish-install.sh once. Shared by the first install attempt and
+        the uninstall+reinstall retry so they can never diverge."""
+        rish_script = self.system_dir / "rish-install.sh"
+        cmd = ["bash", str(rish_script), pkg_name, app_name, exported_name, str(self.storage_dir)]
+        # The script performs ~8 rish round trips, moves a large APK,
+        # then runs pm install - a short timeout can clip a slow
+        # install into a bogus 124.
+        return run_command(
+            cmd,
+            timeout=600,
+            env=rish_environ({"ENHANCIFY_CONFIG_FILE": str(config.config_file)}),
+        )
+
+    def _finish_rish_install(
+        self,
+        app_name: str,
+        pkg_name: str,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> InstallResult:
+        install_type_file = self.storage_dir / "install_type.txt"
+        install_type = "new"
+        if install_type_file.exists():
+            install_type = install_type_file.read_text().strip() or "new"
+
+        # Run DEX Optimization
+        if progress_callback:
+            progress_callback("Running DEX Optimization via Rish...")
+        dex_ok, dex_msg = self.run_dex_optimization(pkg_name, install_type)
+
+        if config.is_on("LAUNCH_APP_AFTER_MOUNT"):
+            run_rish(
+                f"pm resolve-activity --brief {pkg_name} | tail -n 1 | xargs am start -n",
+                timeout=60,
+            )
+
+        if dex_ok:
+            return InstallResult(True, f"{app_name} installed successfully via Rish with Dex Optimization!")
+        return InstallResult(True, f"{app_name} installed via Rish, but DEX optimization failed: {dex_msg}")
+
+    def _rish_failure_result(self, exported_name: str, out: str, err: str) -> InstallResult:
+        install_error_file = self.storage_dir / "install_error.txt"
+        install_failure_code_file = self.storage_dir / "install_failure_code.txt"
+
+        reason = ""
+        if install_error_file.exists():
+            reason = install_error_file.read_text().strip()
+        if not reason:
+            reason = (out + err).strip()
+        if not reason:
+            reason = "rish produced no output (Shizuku not authorized?)"
+
+        conflict = None
+        if install_failure_code_file.exists():
+            if install_failure_code_file.read_text().strip() == "INSTALL_FAILED_VERSION_DOWNGRADE":
+                conflict = CONFLICT_VERSION_DOWNGRADE
+
+        return InstallResult(
+            False,
+            f"Rish installation failed: {reason}",
+            conflict=conflict,
+            exported_name=exported_name,
+        )
+
+    def uninstall_and_reinstall(
+        self,
+        app_name: str,
+        pkg_name: str,
+        exported_name: str,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> InstallResult:
+        """Uninstall the currently installed package via rish, then rerun the
+        rish install script against the already-staged APK. Used to resolve a
+        version-downgrade conflict the user opted into."""
+        if progress_callback:
+            progress_callback("Uninstalling the currently installed version...")
+
+        _, out, err = run_rish(f"pm uninstall --user current {pkg_name}", timeout=300)
+        combined = out + err
+        if "Success" not in combined:
+            # Older pm builds reject --user current on uninstall.
+            _, out, err = run_rish(f"pm uninstall {pkg_name}", timeout=300)
+            combined = out + err
+
+        if "Success" not in combined:
+            stripped_lines = [line for line in combined.strip().splitlines() if line.strip()]
+            reason = _first_rish_error_line(combined) or (stripped_lines[0] if stripped_lines else "")
+            if not reason:
+                reason = "rish produced no output (Shizuku not authorized?)"
+            return InstallResult(False, f"Uninstall failed: {reason}")
+
+        if progress_callback:
+            progress_callback("Reinstalling patched APK via Rish...")
+
+        self._clear_rish_result_files()
+        code, out, err = self._run_rish_script(pkg_name, app_name, exported_name)
+        if code == 0:
+            return self._finish_rish_install(app_name, pkg_name, progress_callback)
+        return self._rish_failure_result(exported_name, out, err)
+
 
 
 # Global installer instance

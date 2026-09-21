@@ -26,7 +26,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.config import ConfigManager
-from src.installer import AppInstaller
+from src.installer import AppInstaller, CONFLICT_VERSION_DOWNGRADE
 
 
 class TestInstallModeRouting(unittest.TestCase):
@@ -61,13 +61,13 @@ class TestInstallModeRouting(unittest.TestCase):
             mock_run_command.return_value = (0, "Install succeeded.", "")
             mock_dexopt.return_value = (True, "DEX optimized (quicken)")
 
-            ok, msg = self.installer.install_or_export(
+            res = self.installer.install_or_export(
                 self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
                 has_root=False, has_rish=True,
             )
 
-        self.assertTrue(ok)
-        self.assertIn("Rish", msg)
+        self.assertTrue(res.ok)
+        self.assertIn("Rish", res.message)
         mock_run_command.assert_called_once()
         rish_cmd = mock_run_command.call_args[0][0]
         self.assertIn(str(self.workspace / "system" / "rish-install.sh"), rish_cmd)
@@ -92,14 +92,14 @@ class TestInstallModeRouting(unittest.TestCase):
             mock_run_command.return_value = (0, "Install succeeded.", "")
             mock_dexopt.return_value = (False, "Package not found: com.test.app")
 
-            ok, msg = self.installer.install_or_export(
+            res = self.installer.install_or_export(
                 self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
                 has_root=False, has_rish=True,
             )
 
-        self.assertTrue(ok)
-        self.assertIn("DEX optimization failed", msg)
-        self.assertIn("Package not found", msg)
+        self.assertTrue(res.ok)
+        self.assertIn("DEX optimization failed", res.message)
+        self.assertIn("Package not found", res.message)
 
     def test_rish_mode_clears_stale_result_files(self):
         storage = self.workspace / "storage"
@@ -109,13 +109,13 @@ class TestInstallModeRouting(unittest.TestCase):
         (storage / "install_error.txt").write_text("stale error")
 
         with patch("src.installer.run_command", return_value=(1, "", "")):
-            ok, msg = self.installer.install_or_export(
+            res = self.installer.install_or_export(
                 self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
                 has_root=False, has_rish=True,
             )
 
-        self.assertFalse(ok)
-        self.assertIn("no output", msg)
+        self.assertFalse(res.ok)
+        self.assertIn("no output", res.message)
         self.assertFalse((storage / "install_type.txt").exists())
         self.assertFalse((storage / "rish_log.txt").exists())
         self.assertFalse((storage / "install_error.txt").exists())
@@ -125,13 +125,13 @@ class TestInstallModeRouting(unittest.TestCase):
             patch("src.installer.run_command") as mock_run_command,
             patch("src.installer.shutil.which", return_value=None),
         ):
-            ok, msg = self.installer.install_or_export(
+            res = self.installer.install_or_export(
                 self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
                 has_root=False, has_rish=False,
             )
 
-        self.assertTrue(ok)
-        self.assertIn("exported to", msg)
+        self.assertTrue(res.ok)
+        self.assertIn("exported to", res.message)
         mock_run_command.assert_not_called()
         exported = self.workspace / "storage" / "Patched" / "TestApp-1.0-TestSrc.apk"
         self.assertTrue(exported.exists())
@@ -140,15 +140,90 @@ class TestInstallModeRouting(unittest.TestCase):
         with patch("src.installer.run_command") as mock_run_command:
             mock_run_command.return_value = (0, "Mounted.", "")
 
-            ok, msg = self.installer.install_or_export(
+            res = self.installer.install_or_export(
                 self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
                 has_root=True, has_rish=True,
             )
 
-        self.assertTrue(ok)
-        self.assertIn("Root", msg)
+        self.assertTrue(res.ok)
+        self.assertIn("Root", res.message)
         mount_cmd = mock_run_command.call_args[0][0]
         self.assertEqual(mount_cmd[0], "su")
+
+    def test_rish_downgrade_failure_surfaces_conflict(self):
+        storage = self.workspace / "storage"
+        storage.mkdir(parents=True, exist_ok=True)
+
+        def fake_run_command(cmd, **kwargs):
+            (storage / "install_error.txt").write_text(
+                "INSTALL_FAILED_VERSION_DOWNGRADE: Downgrade detected: Update "
+                "version code 312270001 is older than current 312271001"
+            )
+            (storage / "install_failure_code.txt").write_text("INSTALL_FAILED_VERSION_DOWNGRADE")
+            return (1, "", "")
+
+        with patch("src.installer.run_command", side_effect=fake_run_command):
+            res = self.installer.install_or_export(
+                self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
+                has_root=False, has_rish=True,
+            )
+
+        self.assertFalse(res.ok)
+        self.assertEqual(res.conflict, CONFLICT_VERSION_DOWNGRADE)
+        self.assertEqual(res.exported_name, "TestApp-1.0-TestSrc")
+        self.assertIn("312270001", res.message)
+        self.assertIn("312271001", res.message)
+
+    def test_non_downgrade_failure_has_no_conflict(self):
+        storage = self.workspace / "storage"
+        storage.mkdir(parents=True, exist_ok=True)
+
+        def fake_run_command(cmd, **kwargs):
+            (storage / "install_error.txt").write_text("Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]")
+            (storage / "install_failure_code.txt").write_text("INSTALL_FAILED_UPDATE_INCOMPATIBLE")
+            return (1, "", "")
+
+        with patch("src.installer.run_command", side_effect=fake_run_command):
+            res = self.installer.install_or_export(
+                self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
+                has_root=False, has_rish=True,
+            )
+
+        self.assertFalse(res.ok)
+        self.assertIsNone(res.conflict)
+
+    def test_uninstall_and_reinstall_runs_uninstall_then_script(self):
+        with (
+            patch("src.installer.run_rish", return_value=(0, "Success", "")) as mock_run_rish,
+            patch("src.installer.run_command", return_value=(0, "", "")) as mock_run_command,
+            patch.object(self.installer, "run_dex_optimization", return_value=(True, "DEX optimized (speed)")),
+        ):
+            res = self.installer.uninstall_and_reinstall(
+                "TestApp", "com.test.app", "TestApp-1.0-TestSrc",
+            )
+
+        self.assertTrue(res.ok)
+        first_call = mock_run_rish.call_args_list[0]
+        self.assertEqual(first_call[0][0], "pm uninstall --user current com.test.app")
+        mock_run_command.assert_called_once()
+        script_cmd = mock_run_command.call_args[0][0]
+        self.assertIn(str(self.workspace / "system" / "rish-install.sh"), script_cmd)
+
+    def test_uninstall_failure_is_reported_without_reinstalling(self):
+        with (
+            patch(
+                "src.installer.run_rish",
+                return_value=(0, "", "Failure [DELETE_FAILED_INTERNAL_ERROR]"),
+            ),
+            patch("src.installer.run_command") as mock_run_command,
+        ):
+            res = self.installer.uninstall_and_reinstall(
+                "TestApp", "com.test.app", "TestApp-1.0-TestSrc",
+            )
+
+        self.assertFalse(res.ok)
+        self.assertIn("Uninstall failed", res.message)
+        mock_run_command.assert_not_called()
 
 
 class TestDexOptimization(unittest.TestCase):

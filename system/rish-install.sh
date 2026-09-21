@@ -47,22 +47,27 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 CONFIG_FILE="${ENHANCIFY_CONFIG_FILE:-$SCRIPT_DIR/../.config}"
 SKIP_VERIFICATION="off"
 BYPASS_LOW_TARGET_SDK_BLOCK="off"
+ALLOW_APP_VERSION_DOWNGRADE="off"
 
 if [ -f "$CONFIG_FILE" ]; then
     log "Config file found at: $CONFIG_FILE"
 
     SKIP_VERIFICATION=$(grep "^SKIP_VERIFICATION=" "$CONFIG_FILE" | cut -d"'" -f2)
     BYPASS_LOW_TARGET_SDK_BLOCK=$(grep "^BYPASS_LOW_TARGET_SDK_BLOCK=" "$CONFIG_FILE" | cut -d"'" -f2)
+    ALLOW_APP_VERSION_DOWNGRADE=$(grep "^ALLOW_APP_VERSION_DOWNGRADE=" "$CONFIG_FILE" | cut -d"'" -f2)
 
     SKIP_VERIFICATION=${SKIP_VERIFICATION:-off}
     BYPASS_LOW_TARGET_SDK_BLOCK=${BYPASS_LOW_TARGET_SDK_BLOCK:-off}
+    ALLOW_APP_VERSION_DOWNGRADE=${ALLOW_APP_VERSION_DOWNGRADE:-off}
 
     log "Config: SKIP_VERIFICATION='$SKIP_VERIFICATION'"
     log "Config: BYPASS_LOW_TARGET_SDK_BLOCK='$BYPASS_LOW_TARGET_SDK_BLOCK'"
+    log "Config: ALLOW_APP_VERSION_DOWNGRADE='$ALLOW_APP_VERSION_DOWNGRADE'"
 else
     log "Config file not found at: $CONFIG_FILE (using defaults)"
     log "Config: SKIP_VERIFICATION='$SKIP_VERIFICATION'"
     log "Config: BYPASS_LOW_TARGET_SDK_BLOCK='$BYPASS_LOW_TARGET_SDK_BLOCK'"
+    log "Config: ALLOW_APP_VERSION_DOWNGRADE='$ALLOW_APP_VERSION_DOWNGRADE'"
 fi
 
 PATCHED_APP_PATH="/data/local/tmp/enhancify/$PKG_NAME.apk"
@@ -130,6 +135,11 @@ if [ "$BYPASS_LOW_TARGET_SDK_BLOCK" == "on" ]; then
     fi
 fi
 
+if [ "$ALLOW_APP_VERSION_DOWNGRADE" == "on" ]; then
+    INSTALL_FLAGS="$INSTALL_FLAGS -d"
+    log "Adding flag: -d (allow version downgrade)"
+fi
+
 CMD_RISH="pm install -r -i com.android.vending$INSTALL_FLAGS --user current $PATCHED_APP_PATH"
 OUTPUT=$(rish -c "$CMD_RISH" 2>&1)
 log "Install command: $CMD_RISH"
@@ -167,6 +177,7 @@ if echo "$OUTPUT" | grep -q "^Success"; then
     log "Install succeeded."
     rish -c "rm -f $PATCHED_APP_PATH"
     [ -n "$STORAGE" ] && rm -f "$STORAGE/install_error.txt"
+    [ -n "$STORAGE" ] && rm -f "$STORAGE/install_failure_code.txt"
     exit 0
 else
     FAILURE_REASON=$(parse_install_failure "$OUTPUT")
@@ -174,6 +185,11 @@ else
     log "Failure reason: $FAILURE_REASON"
 
     [ -n "$STORAGE" ] && echo "$FAILURE_REASON" > "$STORAGE/install_error.txt"
+
+    FAILURE_CODE=$(echo "$OUTPUT" | grep -o 'INSTALL_FAILED_[A-Z_]*' | head -1)
+    FAILURE_CODE=${FAILURE_CODE:-UNKNOWN}
+    log "Failure code: $FAILURE_CODE"
+    [ -n "$STORAGE" ] && echo "$FAILURE_CODE" > "$STORAGE/install_failure_code.txt"
 
     log "Moving APK back to original location."
     rish -c "mv -f $PATCHED_APP_PATH $EXPORTED_APP_PATH"
