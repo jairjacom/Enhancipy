@@ -1,5 +1,27 @@
 # EnhanciPy Changelog
 
+## [v1.1.0] — theme persistence fix + rish downgrade-conflict resolution
+
+### Fixed
+
+- **Theme choice no longer resets.** The test suite was writing straight to
+  the live `.config` file (no test isolation), so running `pytest` reverted
+  whatever theme you'd picked back to Cybernetic Green. Tests now run
+  against a throwaway sandboxed config; your selected theme survives every
+  relaunch.
+
+### Added
+
+- **Version-downgrade conflict dialog.** Installing a patched APK with a
+  lower version code than the currently installed app used to fail with a
+  generic Rish error. It now detects `INSTALL_FAILED_VERSION_DOWNGRADE` and
+  offers a clear Yes/No dialog (green Yes, red No, legible in every theme)
+  to uninstall the current version and install the patched one in a single
+  flow.
+- **Settings ▸ Allow Version Downgrades is now wired up.** When enabled, the
+  Rish installer first tries a data-preserving `pm install -d`; the
+  uninstall-and-reinstall prompt only appears if that still fails.
+
 ## [v1.0.0] — first release
 
 EnhanciPy is a pure-Python Textual TUI for patching Android apps on Termux.
