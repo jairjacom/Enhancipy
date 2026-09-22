@@ -137,3 +137,26 @@ grepped for any prior working-dir name — none found).
     `RISH_APPLICATION_ID=PKG` (the silent-no-op signature);
     `run_dex_optimization('com.does.not.exist')` correctly returns
     `(False, 'Error: Package not found: ...')`. Full suite: 91/91 passing.
+- Added (this session): scrollbar arrow decoration (▲▼ vertical, ◀▶
+  horizontal). New `src/tui/scrollbar.py` (`ArrowScrollBarRender`, a
+  `ScrollBarRender` subclass) is installed app-wide via
+  `ScrollBar.renderer = ArrowScrollBarRender` in `src/tui/app.py` (the
+  documented Textual hook — every scrollbar in every screen renders
+  through this one class attribute). Arrow glyphs reuse `bar_color`/
+  `back_color`, which Textual already resolves from the
+  `scrollbar-color`/`scrollbar-color-hover` CSS tokens
+  (`$enh-accent`/`$enh-accent-2` on `ContentContainer`,
+  `src/tui/styles.tcss:144-147`) — no per-theme edits needed, hover
+  recolor works unchanged. Arrows are suppressed when there's no
+  overflow or the track is under 3 cells (`ArrowScrollBarRender.MIN_SIZE`)
+  to avoid crowding out the thumb on tiny scrollbars. New
+  `tests/test_scrollbar_arrows.py` (5 tests): direct `render_bar` unit
+  tests for vertical/horizontal glyph placement + meta
+  (`@mouse.down: scroll_up`/`scroll_down`, matching stock end-of-track
+  click behavior) and short-bar/no-overflow suppression, plus an
+  end-to-end test asserting `ScrollBar.renderer` is installed and ▲▼
+  appear in a real `app.export_screenshot()`. Note: a scrollable
+  container's on-screen `region.height` can equal `virtual_size.height`
+  while still showing a scrollbar (padding eats into the actual content
+  track) — use `show_vertical_scrollbar` as the overflow precondition in
+  tests, not a height comparison. Full suite: 108/108 passing.
