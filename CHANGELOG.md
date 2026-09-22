@@ -1,5 +1,15 @@
 # EnhanciPy Changelog
 
+## [v1.2.0] — scrollbar arrow decoration
+
+### Added
+
+- **Scrollbars now show ▲▼ (vertical) / ◀▶ (horizontal) arrow glyphs** at
+  both ends, app-wide, on every screen. Colored with the active theme's
+  scrollbar accent and hover color, so they recolor exactly like the thumb
+  and need no per-theme work. Clicking an arrow step-scrolls, same as
+  clicking the end of the track today.
+
 ## [v1.1.0] — theme persistence fix + rish downgrade-conflict resolution
 
 ### Fixed
