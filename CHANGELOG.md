@@ -1,5 +1,14 @@
 # EnhanciPy Changelog
 
+## [v1.3.0] — automatic updates on launch
+
+### Added
+
+- EnhanciPy now checks for a newer version every time it starts and
+  installs it automatically, so you're always on the latest release
+  without re-cloning or pulling by hand. Turn it off any time in
+  Configure ▸ Features ▸ Auto Update.
+
 ## [v1.2.1] — correct version display
 
 ### Fixed
