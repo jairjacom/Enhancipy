@@ -42,6 +42,7 @@ TOGGLE_KEYS = [
     ("USE_PARALLEL_GC", "Parallel Garbage Collection", "Enable multi-threaded Java ParallelGC engine"),
     ("CACHE_CLI", "Cache CLI Jar", "Cache downloaded CLI binaries locally across runs"),
     ("ENABLE_MULTIPATCHER", "Multi-Patcher (Experimental)", "Combine and merge patches from up to 3 sources"),
+    ("AUTO_UPDATE", "Auto Update", "Automatically check for and install EnhanciPy updates on launch"),
 ]
 
 RISH_FLAGS = [
