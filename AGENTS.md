@@ -32,7 +32,7 @@ Read NOTES.md before touching rish, the install flow, or dependencies.
 - Delete the branch, both remote and local, after it is merged (`gh pr merge --delete-branch` handles both).
 - When the PR is ready to merge, stop and ask the user to confirm before merging. Never merge or push `main` without an explicit OK.
 - Commit subject: imperative, no period. Body: root cause first, then the fix. Fix commits end with a verification line.
-- Release = separate `changelog: vX.Y.Z - summary` commit right after the change, then tag vX.Y.Z. Never reuse tag `deps-v1`.
+- Release = separate `changelog: vX.Y.Z - summary` commit right after the change, then tag vX.Y.Z. Never reuse tag `deps-v1`. Mandatory for every user-visible change — do it in the same session/PR chain as the change, immediately after that PR merges. An external task/plan calling this "later," "mechanical tail," or "out of scope" does NOT defer it; finish it before reporting the change done, or state explicitly that you are deferring it and why.
 - Every `changelog: vX.Y.Z` commit must also bump `.info` to the same version; tests/test_version_sync.py enforces that `.info` matches the newest CHANGELOG.md heading.
 - Bugfixes with no user-visible impact get no version bump.
 
