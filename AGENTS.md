@@ -32,6 +32,7 @@ Read NOTES.md before touching rish, the install flow, or dependencies.
 - When merged locally and ready, stop and ask the user to confirm before `git push`. Never push without an explicit OK.
 - Commit subject: imperative, no period. Body: root cause first, then the fix. Fix commits end with a verification line.
 - Release = separate `changelog: vX.Y.Z - summary` commit right after the change, then tag vX.Y.Z. Never reuse tag `deps-v1`.
+- Every `changelog: vX.Y.Z` commit must also bump `.info` to the same version; tests/test_version_sync.py enforces that `.info` matches the newest CHANGELOG.md heading.
 - Bugfixes with no user-visible impact get no version bump.
 
 ## CHANGELOG.md (read by end users)

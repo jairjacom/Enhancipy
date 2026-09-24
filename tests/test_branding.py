@@ -24,7 +24,9 @@ os.environ.setdefault("ENHANCIPY_DEP_BOOTSTRAP", "0")
 
 from textual.widgets import Label
 
+from src.environment import env
 from src.tui.app import EnhancifyApp
+from src.tui.screens.specs import bundled_changelog
 
 
 def _run_async(coro):
@@ -77,6 +79,10 @@ class TestSpecsChangelogFallback(unittest.TestCase):
             def json(self):
                 return {}
 
+        current_version = env.get_version()
+        expected_section = bundled_changelog(current_version)
+        marker = expected_section.splitlines()[0]
+
         async def scenario():
             app = EnhancifyApp()
             with patch(
@@ -91,14 +97,14 @@ class TestSpecsChangelogFallback(unittest.TestCase):
                         await pilot.pause(0.05)
                         label = app.screen.query_one("#changelog-label", Label)
                         text = str(label.render())
-                        if "EnhanciPy is a pure-Python" in text:
+                        if marker in text:
                             break
                     return text
 
         text = _run_async(scenario())
 
-        self.assertIn("EnhanciPy is a pure-Python Textual TUI", text)
-        self.assertIn("v1.0.0", text)
+        self.assertIn(marker, text)
+        self.assertIn(current_version, text)
 
 
 if __name__ == "__main__":
