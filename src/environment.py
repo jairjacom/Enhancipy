@@ -111,7 +111,7 @@ class Environment:
                 return match.group(1).strip()
             first_line = content.splitlines()[0].strip() if content.splitlines() else "Unknown"
             return first_line.strip("'\"")
-        return "v1.0.0"
+        return "Unknown"
 
     def check_privileges(
         self,
