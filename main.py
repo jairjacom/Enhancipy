@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 
 async def run_smoke_tests() -> bool:
@@ -89,6 +90,7 @@ def main():
     parser.add_argument("--root", action="store_true", help="Force Root Mode")
     parser.add_argument("--rish", action="store_true", help="Force Rish Mode")
     parser.add_argument("--smoke-test", action="store_true", help="Run automated display smoke tests on virtual Android displays")
+    parser.add_argument("--no-update", action="store_true", help="Skip the automatic update check")
 
     args = parser.parse_args()
 
@@ -97,6 +99,17 @@ def main():
         success = asyncio.run(run_smoke_tests())
         sys.exit(0 if success else 1)
 
+    # Self-update: check GitHub for a newer release and re-exec into it
+    # before any TUI module is imported (GW-launcher parity).
+    if not args.no_update and os.environ.get("ENHANCIPY_SELF_UPDATE", "1") != "0":
+        from src.self_update import SelfUpdater
+
+        if SelfUpdater().run() == "updated":
+            print("Relaunching EnhanciPy...")
+            os.execv(
+                sys.executable,
+                [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]],
+            )
     # Launch Textual TUI
     try:
         from src.tui.app import EnhancifyApp

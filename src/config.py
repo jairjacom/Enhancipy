@@ -32,6 +32,7 @@ DEFAULT_CONFIG: Dict[str, str] = {
     "USE_PRE_RELEASE": "off",
     "DISABLE_NETWORK_ACCELERATION": "off",
     "Use_CUSTOM_KEYSTORE": "off",
+    "AUTO_UPDATE": "on",
 }
 
 
