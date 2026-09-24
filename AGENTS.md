@@ -27,9 +27,10 @@ Read NOTES.md before touching rish, the install flow, or dependencies.
 - Rebrand visible strings only. Never rename identifiers, paths, env vars, config keys, repo slug, User-Agent, or keystore alias.
 
 ## Git
-- One branch per change (`fix/<name>`, `feat/<name>`). Merge to main only after tests pass and, for device-facing changes, on-device confirmation.
-- Delete the branch after it is merged.
-- When merged locally and ready, stop and ask the user to confirm before `git push`. Never push without an explicit OK.
+- One branch per change (`fix/<name>`, `feat/<name>`). Push it to `origin` and open a PR (`gh pr create`) — every change gets visible history/diff on GitHub.
+- Merge the PR (`gh pr merge --squash` or `--merge`, matching the repo's existing merge-commit style) only after tests pass and, for device-facing changes, on-device confirmation.
+- Delete the branch, both remote and local, after it is merged (`gh pr merge --delete-branch` handles both).
+- When the PR is ready to merge, stop and ask the user to confirm before merging. Never merge or push `main` without an explicit OK.
 - Commit subject: imperative, no period. Body: root cause first, then the fix. Fix commits end with a verification line.
 - Release = separate `changelog: vX.Y.Z - summary` commit right after the change, then tag vX.Y.Z. Never reuse tag `deps-v1`.
 - Every `changelog: vX.Y.Z` commit must also bump `.info` to the same version; tests/test_version_sync.py enforces that `.info` matches the newest CHANGELOG.md heading.
