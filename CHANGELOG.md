@@ -1,5 +1,14 @@
 # EnhanciPy Changelog
 
+## [v1.2.1] — correct version display
+
+### Fixed
+
+- The app showed version 1.0.0 even when you had a newer version
+  installed, and the changelog screen displayed the release notes for
+  1.0.0 instead of the version you actually have. Both now show the
+  correct version and its release notes.
+
 ## [v1.2.0] — scrollbar arrow decoration
 
 ### Added
