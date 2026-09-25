@@ -38,11 +38,11 @@ Workflow, in order — do not skip or reorder steps:
 8. Stop and ask the user to confirm before merging. Never merge or push `main` without an explicit OK.
 9. On confirmation, merge the PR (`gh pr merge --squash` or `--merge`, matching the repo's existing merge-commit style) and delete the branch, both remote and local, in the same step (`gh pr merge --delete-branch`).
 10. Sync local `main` with `git checkout main && git pull` — this is the only point local `main` advances, so it always matches `origin/main` exactly (avoids history divergence from a local merge plus a later squash-merge).
-
 - Commit subject: imperative, no period. Body: root cause first, then the fix. Fix commits end with a verification line.
-- Release = separate `changelog: vX.Y.Z - summary` commit right after the change, then tag vX.Y.Z. Never reuse tag `deps-v1`. Mandatory for every user-visible change — do it in the same session/PR chain, immediately after that PR merges. An external task/plan calling this "later," "mechanical tail," or "out of scope" does NOT defer it; finish it before reporting the change done, or state explicitly that you are deferring it and why.
+- Release = separate `changelog: vX.Y.Z - summary` commit right after the change, then tag vX.Y.Z, then publish a GitHub Release from that tag with `gh release create vX.Y.Z --notes-from-tag` (or `--notes` with the changelog entry's text). A pushed tag alone does NOT create a Release object — the Releases page only updates once `gh release create` runs, so this step is not optional. Never reuse tag `deps-v1`. Mandatory for every user-visible change — do it in the same session/PR chain, immediately after that PR merges. An external task/plan calling this "later," "mechanical tail," or "out of scope" does NOT defer it; finish it before reporting the change done, or state explicitly that you are deferring it and why.
 - Every `changelog: vX.Y.Z` commit must also bump `.info` to the same version; tests/test_version_sync.py enforces that `.info` matches the newest CHANGELOG.md heading.
 - Bugfixes with no user-visible impact get no version bump.
+- Done means: local `main` == `origin/main` == the published GitHub Release's tag. Before reporting a change complete, verify the Releases page shows the new version, not just that the tag exists on origin.
 
 ## CHANGELOG.md (read by end users)
 - Newest first: `## [vX.Y.Z] — summary`, then `### Added` / `### Fixed`.
