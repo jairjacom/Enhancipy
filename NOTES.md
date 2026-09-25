@@ -160,3 +160,56 @@ grepped for any prior working-dir name — none found).
   while still showing a scrollbar (padding eats into the actual content
   track) — use `show_vertical_scrollbar` as the overflow precondition in
   tests, not a height comparison. Full suite: 108/108 passing.
+- Fixed (this session): Rish install flow used the **source** app's
+  package name for every post-move step, but patch sets (observed:
+  Anddea's "Post-processing package name change" step on YouTube
+  21.13.164) can rename the package inside the APK. Root-caused live on
+  device (SDK 37, `~/EnhanciPy`):
+  - Before: `aapt2 dump badging apps/YouTube/21.13.164-Anddea.apk` →
+    `package: name='anddea.youtube'`, but `install_or_export`'s rish
+    branch called `_run_rish_script`/`run_dex_optimization`/the
+    `LAUNCH_APP_AFTER_MOUNT` launch/the downgrade-retry uninstall with
+    `com.google.android.youtube` (the *source* app's package) the whole
+    way through. The APK actually installed fine as `anddea.youtube`
+    (`pm list packages`, `lastUpdateTime` bumped) alongside the untouched
+    stock `com.google.android.youtube` 21.37.42 — "installed app is a
+    lower version" was the patched 21.13.164 vs. stock 21.37.42, not a
+    failed install. Dex optimization and the post-install launch silently
+    ran against the **stock** app instead: `dumpsys package
+    anddea.youtube` showed `[status=speed-profile] [reason=ab-ota-sync]`
+    (background default, nothing we compiled) before the fix.
+  - Also found: `system/rish-install.sh`'s `rish()` wrapper discarded
+    stderr on the direct (non-temp-file) path, and some probes return
+    their result **only on stderr** — reproduced live: `rish -c "getprop
+    ro.build.version.sdk"` gave `out='' err='37'` through
+    `src/utils.run_rish`. This silently zeroed `DEVICE_SDK` (`Device SDK:
+    0`), which silently dropped the user's `BYPASS_LOW_TARGET_SDK_BLOCK`
+    flag on an SDK 37 device that needed it. Exact-string probe
+    comparisons (`== "Installed"`) also had no tolerance for extra output
+    lines.
+  - Fix: `rish()` now merges stderr into the piped stdout stream
+    (`command rish "$@" 2>&1 | sed ...`) instead of a mktemp dance that
+    only forwarded it after the fact; every probe site normalizes/matches
+    with `grep -qx` instead of `==`. `src/installer.py` gained
+    `AppInstaller._patched_pkg_name()` (`aapt2 dump badging`, presence-only
+    — never triggers a network `ensure()`), whose result (falling back to
+    the source package name when aapt2 is unavailable/unparseable) is now
+    threaded through `_run_rish_script`, `_finish_rish_install` (dexopt +
+    launch), `_rish_failure_result`, and — via a new `InstallResult
+    .pkg_name` field stashed into the TUI's `_install_ctx` — the
+    downgrade-conflict uninstall/reinstall retry. The result message now
+    tells the user when a patch renamed the package.
+  - Verified end-to-end live on device: ran the real
+    `system/rish-install.sh` directly with `anddea.youtube` as `$1` — log
+    shows `Device SDK: 37` (previously `0`) and `Existing installation
+    detected (v21.13.164) - this will be an UPDATE`. Then ran
+    `app_installer.run_dex_optimization('anddea.youtube', 'update')` →
+    `(True, 'DEX optimized (speed)')`; `dumpsys package anddea.youtube`
+    confirmed `[status=speed] [reason=cmdline]` on the base APK (dexopt
+    had never applied to the patched app before this fix). Stock
+    `com.google.android.youtube` (21.37.42) confirmed untouched
+    throughout. Full suite: 130/130 passing (12 new/updated cases in
+    `tests/test_rish_script.py` covering stderr-only probe output and
+    `grep -qx` noise tolerance; new `TestPatchedPkgName` +
+    renamed-package routing cases in `tests/test_installer.py`).
+

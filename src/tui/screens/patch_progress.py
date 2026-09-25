@@ -244,6 +244,8 @@ class PatchProgressScreen(Screen):
                 has_rish,
                 progress_callback=lambda m: modal.update_message(m),
             )
+            if getattr(res, "pkg_name", None):
+                self._install_ctx["pkg_name"] = res.pkg_name
             self.app.call_from_thread(modal.safe_dismiss)
             if res.ok:
                 self.app.call_from_thread(
