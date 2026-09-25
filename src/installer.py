@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Callable, NamedTuple, Optional, Tuple
 
 from src.config import config
+from src.deps import DependencyBootstrap
 from src.environment import env
 from src.utils import rish_environ, run_command, run_rish
 
@@ -46,6 +47,7 @@ class InstallResult(NamedTuple):
     message: str
     conflict: Optional[str] = None
     exported_name: Optional[str] = None
+    pkg_name: Optional[str] = None
 
 
 def rish_export_name(app_name: str, app_ver: str, source_name: str) -> str:
@@ -336,10 +338,11 @@ class AppInstaller:
                 return InstallResult(False, "rish-install.sh script not found!")
 
             self._clear_rish_result_files()
-            code, out, err = self._run_rish_script(pkg_name, app_name, exported_name)
+            install_pkg = self._patched_pkg_name(apk_path) or pkg_name
+            code, out, err = self._run_rish_script(install_pkg, app_name, exported_name)
             if code == 0:
-                return self._finish_rish_install(app_name, pkg_name, progress_callback)
-            return self._rish_failure_result(exported_name, out, err)
+                return self._finish_rish_install(app_name, install_pkg, source_pkg=pkg_name, progress_callback=progress_callback)
+            return self._rish_failure_result(exported_name, out, err, pkg_name=install_pkg)
 
         # 4. Non-Privilege Mode (Copy to Internal Storage)
         else:
@@ -359,6 +362,18 @@ class AppInstaller:
                 return InstallResult(True, f"Non-privilege Mode — patched APK exported to:\n{target_storage_apk}")
             except Exception as e:
                 return InstallResult(False, f"Failed to export APK: {e}")
+
+    def _patched_pkg_name(self, apk_path: Path) -> str:
+        """Actual package name inside the patched APK ('' when aapt2 is
+        unavailable or badging fails - caller falls back to the source name)."""
+        aapt2 = DependencyBootstrap(self.workspace_dir).aapt2_bin
+        if not aapt2.exists() or not apk_path.exists():
+            return ""
+        code, out, _ = run_command([str(aapt2), "dump", "badging", str(apk_path)], timeout=30)
+        if code != 0:
+            return ""
+        m = re.search(r"package:\s*name='([^']+)'", out)
+        return m.group(1) if m else ""
 
     def _clear_rish_result_files(self) -> None:
         """Unlink the three files rish-install.sh writes, so a stale result
@@ -385,7 +400,8 @@ class AppInstaller:
     def _finish_rish_install(
         self,
         app_name: str,
-        pkg_name: str,
+        install_pkg: str,
+        source_pkg: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> InstallResult:
         install_type_file = self.storage_dir / "install_type.txt"
@@ -396,19 +412,23 @@ class AppInstaller:
         # Run DEX Optimization
         if progress_callback:
             progress_callback("Running DEX Optimization via Rish...")
-        dex_ok, dex_msg = self.run_dex_optimization(pkg_name, install_type)
+        dex_ok, dex_msg = self.run_dex_optimization(install_pkg, install_type)
 
         if config.is_on("LAUNCH_APP_AFTER_MOUNT"):
             run_rish(
-                f"pm resolve-activity --brief {pkg_name} | tail -n 1 | xargs am start -n",
+                f"pm resolve-activity --brief {install_pkg} | tail -n 1 | xargs am start -n",
                 timeout=60,
             )
 
-        if dex_ok:
-            return InstallResult(True, f"{app_name} installed successfully via Rish with Dex Optimization!")
-        return InstallResult(True, f"{app_name} installed via Rish, but DEX optimization failed: {dex_msg}")
+        rename_note = ""
+        if source_pkg is not None and install_pkg != source_pkg:
+            rename_note = f"\nThe patches renamed the package to {install_pkg} - it is installed alongside the original app."
 
-    def _rish_failure_result(self, exported_name: str, out: str, err: str) -> InstallResult:
+        if dex_ok:
+            return InstallResult(True, f"{app_name} installed successfully via Rish with Dex Optimization!{rename_note}", pkg_name=install_pkg)
+        return InstallResult(True, f"{app_name} installed via Rish, but DEX optimization failed: {dex_msg}{rename_note}", pkg_name=install_pkg)
+
+    def _rish_failure_result(self, exported_name: str, out: str, err: str, pkg_name: Optional[str] = None) -> InstallResult:
         install_error_file = self.storage_dir / "install_error.txt"
         install_failure_code_file = self.storage_dir / "install_failure_code.txt"
 
@@ -430,6 +450,7 @@ class AppInstaller:
             f"Rish installation failed: {reason}",
             conflict=conflict,
             exported_name=exported_name,
+            pkg_name=pkg_name,
         )
 
     def uninstall_and_reinstall(
@@ -465,8 +486,8 @@ class AppInstaller:
         self._clear_rish_result_files()
         code, out, err = self._run_rish_script(pkg_name, app_name, exported_name)
         if code == 0:
-            return self._finish_rish_install(app_name, pkg_name, progress_callback)
-        return self._rish_failure_result(exported_name, out, err)
+            return self._finish_rish_install(app_name, pkg_name, progress_callback=progress_callback)
+        return self._rish_failure_result(exported_name, out, err, pkg_name=pkg_name)
 
 
 

@@ -28,12 +28,23 @@ RISH_SCRIPT = REPO_ROOT / "system" / "rish-install.sh"
 STUB_RISH = """#!{bash}
 echo "Entering shell..."
 CMD="$2"
+noise() {{
+    [ "$STUB_NOISE" = "1" ] && echo "warn: probe noise"
+}}
 case "$CMD" in
-    *"getprop ro.build.version.sdk"*) echo "$STUB_SDK" ;;
+    *"getprop ro.build.version.sdk"*)
+        noise
+        if [ "$STUB_STDERR_PROBES" = "1" ]; then echo "$STUB_SDK" >&2; else echo "$STUB_SDK"; fi ;;
     *"am get-current-user"*)
         [ -n "$STUB_LOG" ] && echo "RISH_APPLICATION_ID=$RISH_APPLICATION_ID" >> "$STUB_LOG"
-        echo 0 ;;
-    *"pm list packages"*) : ;;
+        noise
+        if [ "$STUB_STDERR_PROBES" = "1" ]; then echo 0 >&2; else echo 0; fi ;;
+    *"pm list packages"*)
+        noise
+        if [ "$STUB_INSTALLED" = "1" ]; then echo "Installed"; fi ;;
+    *"dumpsys package"*)
+        noise
+        if [ "$STUB_INSTALLED" = "1" ]; then echo "    versionName=9.9.9"; fi ;;
     *"pm install"*)
         echo "$CMD" >> "$STUB_LOG"
         if [ "$STUB_REJECT_FLAGS" = "1" ] && echo "$CMD" | grep -q -- "--"; then
@@ -44,8 +55,8 @@ case "$CMD" in
         fi
         if [ -n "$STUB_INSTALL_OUTPUT" ]; then echo "$STUB_INSTALL_OUTPUT"; exit 0; fi
         echo "Success" ;;
-    *"-d '/data/local/tmp/enhancify'"*) echo "Exists" ;;
-    *"[ -e "*) echo "Exists" ;;
+    *"-d '/data/local/tmp/enhancify'"*) noise; echo "Exists" ;;
+    *"[ -e "*) noise; echo "Exists" ;;
     *) : ;;
 esac
 exit 0
@@ -69,7 +80,8 @@ class RishScriptTestCase(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _run(self, sdk, reject_flags=False, config_text=None, unset_env=None, install_output=None):
+    def _run(self, sdk, reject_flags=False, config_text=None, unset_env=None, install_output=None,
+              stderr_probes=False, installed=False, noise=False):
         if config_text is not None:
             self.config_file.write_text(config_text)
 
@@ -78,6 +90,9 @@ class RishScriptTestCase(unittest.TestCase):
         env["STUB_SDK"] = str(sdk)
         env["STUB_LOG"] = str(self.stub_log)
         env["STUB_REJECT_FLAGS"] = "1" if reject_flags else "0"
+        env["STUB_STDERR_PROBES"] = "1" if stderr_probes else "0"
+        env["STUB_INSTALLED"] = "1" if installed else "0"
+        env["STUB_NOISE"] = "1" if noise else "0"
         env["ENHANCIFY_CONFIG_FILE"] = str(self.config_file)
         if install_output is not None:
             env["STUB_INSTALL_OUTPUT"] = install_output
@@ -203,6 +218,24 @@ class RishScriptTestCase(unittest.TestCase):
         result = self._run(sdk=34)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse((self.storage / "install_failure_code.txt").exists())
+
+    def test_sdk_probe_survives_stderr_only_output(self):
+        result = self._run(sdk=37, stderr_probes=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Device SDK: 37", self._rish_log())
+        self.assertNotIn("Device SDK: 0", self._rish_log())
+
+    def test_existing_install_detected_as_update(self):
+        result = self._run(sdk=34, installed=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.storage / "install_type.txt").read_text().strip(), "update")
+        self.assertIn("Existing installation detected (v9.9.9)", self._rish_log())
+
+    def test_probe_noise_does_not_break_installed_detection(self):
+        result = self._run(sdk=34, installed=True, noise=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.storage / "install_type.txt").read_text().strip(), "update")
+
 
 
 
