@@ -1,5 +1,20 @@
 # EnhanciPy Changelog
 
+## [v1.3.1] — rish installs and optimizes the actual patched app
+
+### Fixed
+
+- **Some patched apps now install and optimize correctly.** When a patch
+  set changes an app's package name (so the patched app is installed
+  alongside the original instead of replacing it), the install process now
+  detects and uses the patched app's real package — so speed optimization
+  and auto-launch target the app you actually just installed, not the
+  original. You'll also see a note in the result when this happens.
+- **Android version detection could silently read as 0**, which quietly
+  skipped the "bypass low target SDK" install option on some devices even
+  when it was turned on in Settings. Fixed so the device's real Android
+  version is always read correctly.
+
 ## [v1.3.0] — automatic updates on launch
 
 ### Added

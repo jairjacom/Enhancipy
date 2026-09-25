@@ -43,9 +43,14 @@ class TestInstallModeRouting(unittest.TestCase):
         self.installer = AppInstaller(workspace_dir=self.workspace)
         self.config_patch = patch("src.installer.config", ConfigManager(self.workspace))
         self.config_patch.start()
+        # No aapt2 in these fixtures; pin the badging lookup so routing tests
+        # exercise `install_or_export`'s own logic, not aapt2 availability.
+        self.pkgname_patch = patch.object(AppInstaller, "_patched_pkg_name", return_value="")
+        self.pkgname_patch.start()
 
     def tearDown(self):
         self.config_patch.stop()
+        self.pkgname_patch.stop()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_rish_mode_invokes_rish_script_and_dex_optimization(self):
@@ -225,6 +230,53 @@ class TestInstallModeRouting(unittest.TestCase):
         self.assertIn("Uninstall failed", res.message)
         mock_run_command.assert_not_called()
 
+    def test_rish_mode_uses_patched_apk_package_name_when_renamed(self):
+        """The Anddea patch set renames the package inside the APK; the rish
+        script, dex optimization, and launch must all target the package the
+        APK actually contains, not the source app's package name."""
+        with (
+            patch.object(self.installer, "_patched_pkg_name", return_value="anddea.youtube"),
+            patch("src.installer.run_command") as mock_run_command,
+            patch.object(self.installer, "run_dex_optimization") as mock_dexopt,
+            patch("src.installer.run_rish"),
+        ):
+            mock_run_command.return_value = (0, "Install succeeded.", "")
+            mock_dexopt.return_value = (True, "DEX optimized (speed)")
+
+            res = self.installer.install_or_export(
+                self.apk_path, "YouTube", "com.google.android.youtube", "1.0", "Anddea",
+                has_root=False, has_rish=True,
+            )
+
+        self.assertTrue(res.ok)
+        self.assertEqual(res.pkg_name, "anddea.youtube")
+        self.assertIn("renamed the package", res.message)
+
+        script_cmd = mock_run_command.call_args[0][0]
+        self.assertEqual(script_cmd[2], "anddea.youtube")
+        mock_dexopt.assert_called_once_with("anddea.youtube", "new")
+
+    def test_rish_mode_falls_back_to_source_package_without_aapt2(self):
+        """No aapt2 (or badging can't parse the APK): behavior is unchanged
+        from before this fix - install against the source package name."""
+        with (
+            patch("src.installer.run_command") as mock_run_command,
+            patch.object(self.installer, "run_dex_optimization") as mock_dexopt,
+            patch("src.installer.run_rish"),
+        ):
+            mock_run_command.return_value = (0, "Install succeeded.", "")
+            mock_dexopt.return_value = (True, "DEX optimized (speed)")
+
+            res = self.installer.install_or_export(
+                self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
+                has_root=False, has_rish=True,
+            )
+
+        self.assertTrue(res.ok)
+        self.assertEqual(res.pkg_name, "com.test.app")
+        self.assertNotIn("renamed the package", res.message)
+        mock_dexopt.assert_called_once_with("com.test.app", "new")
+
 
 class TestDexOptimization(unittest.TestCase):
     def setUp(self):
@@ -298,6 +350,52 @@ class TestDexOptimization(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertIn("status unverified", msg)
+
+
+class TestPatchedPkgName(unittest.TestCase):
+    """`_patched_pkg_name` reads the package name aapt2 actually put inside
+    the patched APK - the Anddea patch set renames it, so this must never be
+    assumed to match the source app's package name."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.workspace = Path(self.temp_dir)
+        self.bin_dir = self.workspace / "bin"
+        self.bin_dir.mkdir(parents=True, exist_ok=True)
+        self.installer = AppInstaller(workspace_dir=self.workspace)
+        self.apk_path = self.workspace / "patched.apk"
+        self.apk_path.write_bytes(b"fake-apk")
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _write_aapt2_stub(self, script: str) -> None:
+        aapt2 = self.bin_dir / "aapt2"
+        aapt2.write_text(f"#!/bin/sh\n{script}\n")
+        aapt2.chmod(0o755)
+
+    def test_returns_package_name_from_badging_output(self):
+        self._write_aapt2_stub(
+            "echo \"package: name='anddea.youtube' versionCode='1' versionName='21.13.164'\""
+        )
+        self.assertEqual(self.installer._patched_pkg_name(self.apk_path), "anddea.youtube")
+
+    def test_missing_aapt2_returns_empty_string(self):
+        self.assertEqual(self.installer._patched_pkg_name(self.apk_path), "")
+
+    def test_nonzero_aapt2_exit_returns_empty_string(self):
+        self._write_aapt2_stub("echo 'boom' >&2; exit 1")
+        self.assertEqual(self.installer._patched_pkg_name(self.apk_path), "")
+
+    def test_unparseable_badging_output_returns_empty_string(self):
+        self._write_aapt2_stub("echo 'not badging output at all'")
+        self.assertEqual(self.installer._patched_pkg_name(self.apk_path), "")
+
+    def test_missing_apk_returns_empty_string(self):
+        self._write_aapt2_stub(
+            "echo \"package: name='anddea.youtube' versionCode='1' versionName='21.13.164'\""
+        )
+        self.assertEqual(self.installer._patched_pkg_name(self.workspace / "missing.apk"), "")
 
 
 if __name__ == "__main__":
