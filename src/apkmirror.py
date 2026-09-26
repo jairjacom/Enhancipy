@@ -37,6 +37,23 @@ class ScrapedVersion:
     url: str
 
 
+def _version_sort_key(version: str) -> Tuple[Tuple[int, ...], str]:
+    """Newest-first ordering key: dotted-numeric prefix as an int tuple,
+    full version string as a deterministic tie-break."""
+    nums = re.match(r"(\d+(?:\.\d+)*)", version)
+    num_key = tuple(int(p) for p in nums.group(1).split(".")) if nums else (0,)
+    return (num_key, version)
+
+
+def order_versions(versions: List["ScrapedVersion"]) -> List["ScrapedVersion"]:
+    """Order the version list for display: the newest (up to 3)
+    [RECOMMENDED] versions first, then everything else newest→oldest.
+    Recommended versions beyond the top 3 stay in the main body."""
+    ordered = sorted(versions, key=lambda v: _version_sort_key(v.version), reverse=True)
+    recommended = [v for v in ordered if v.tag == "[RECOMMENDED]"][:3]
+    pinned = {id(v) for v in recommended}
+    return recommended + [v for v in ordered if id(v) not in pinned]
+
 class APKMirrorScraper:
     """Scrapes APKMirror for app versions and download links."""
 
@@ -253,7 +270,7 @@ class APKMirrorScraper:
 
             processed.append(ScrapedVersion(version=v, tag=final_tag, url=url))
 
-        return processed
+        return order_versions(processed)
 
     # --- Scrape Download Link ---
 
