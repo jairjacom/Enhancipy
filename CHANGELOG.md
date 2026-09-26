@@ -1,5 +1,16 @@
 # EnhanciPy Changelog
 
+## [v1.3.2] — version list now sorted newest to oldest
+
+### Fixed
+
+- **The version list for an app could show up in a random order** every
+  time you opened it, sometimes even changing which version showed a
+  recommended tag first. It now always shows the up to 3 newest
+  recommended versions at the top, followed by every other version
+  newest to oldest, and "Auto Recommended" always picks the newest
+  recommended version.
+
 ## [v1.3.1] — rish installs and optimizes the actual patched app
 
 ### Fixed
