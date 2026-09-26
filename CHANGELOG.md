@@ -1,5 +1,16 @@
 # EnhanciPy Changelog
 
+## [v1.3.3] — complete setup instructions on the project page
+
+### Fixed
+
+- The setup instructions on the project page skipped the step that
+  downloads the app itself, so someone following them from scratch
+  could not get started. They now cover the whole sequence: install
+  the needed Termux packages, download the app, install its Python
+  requirements, and run it. The page also explains what gets
+  downloaded automatically on first start.
+
 ## [v1.3.2] — version list now sorted newest to oldest
 
 ### Fixed
