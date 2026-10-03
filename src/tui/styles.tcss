@@ -152,8 +152,8 @@ ContentContainer {
    focused (including horizontal scroll for content that cannot wrap). */
 .detail-card {
     height: auto;
-    max-height: 100%;
-    min-height: 5;
+    max-height: 100vh;
+    min-height: 4;
     overflow-y: auto;
     overflow-x: auto;
 }
@@ -167,15 +167,15 @@ ContentContainer {
    reachable within the outer ContentContainer's scroll area. */
 .list-card {
     height: auto;
-    max-height: 100%;
-    min-height: 8;
+    max-height: 100vh;
+    min-height: 4;
     overflow-y: auto;
 }
 
 .list-card ListView {
     height: auto;
-    max-height: 12;
-    min-height: 5;
+    max-height: 60vh;
+    min-height: 4;
 }
 
 .list-card ListView > ListItem > Label {
@@ -200,6 +200,17 @@ ContentContainer {
 
 .card:focus {
     border: round $enh-accent;
+}
+
+/* Patch-progress log card: the log viewer itself grows with the window
+   height (vh), so the log grows when the on-screen keyboard hides and
+   shrinks when it shows. (A `.log-card { height: 1fr }` fill was tried
+   first but splits the remaining ContentContainer space between this card
+   and the status card above it in a way that can starve the log viewer to
+   0 height on short terminals — Textual 8.x container-splitting behavior.
+   Capping #log-viewer directly to a vh fraction avoids that.) */
+.log-card {
+    height: auto;
 }
 
 .card-title {
@@ -358,7 +369,8 @@ Input:focus {
     background: $enh-log-bg;
     border: round $enh-accent;
     color: $enh-log-fg;
-    height: 1fr;
+    height: 60vh;
+    min-height: 6;
     padding: 1;
     overflow-y: auto;
 }
@@ -458,7 +470,7 @@ GradientSpinner {
 
 .desc-scroll {
     height: auto;
-    max-height: 14;
+    max-height: 60vh;
     min-height: 4;
     border: round $enh-border;
     background: $enh-surface-2;
@@ -477,7 +489,7 @@ GradientSpinner {
 
 /* --- Toggle (animated switch) dialog --- */
 .toggle-scroll {
-    max-height: 16;
+    max-height: 60vh;
     min-height: 4;
     border: round $enh-border;
     background: $enh-surface-2;
@@ -496,7 +508,7 @@ GradientSpinner {
 
 /* --- Preset-choice select dialog (patch option "values") --- */
 .select-scroll {
-    max-height: 16;
+    max-height: 60vh;
     min-height: 4;
     border: round $enh-border;
     background: $enh-surface-2;

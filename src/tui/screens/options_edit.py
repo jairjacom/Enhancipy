@@ -9,20 +9,17 @@ from typing import Any, Dict, List, Optional, Set
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView
+from textual.widgets import Button, Label, ListItem, ListView
 
 from src.config import config
-from src.environment import env
 from src.theme import palette
 from src.patches import patches_mgr
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog, SelectDialog
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
-class OptionsEditScreen(Screen):
+class OptionsEditScreen(BaseScreen):
     """Screen for configuring patch options."""
 
     BINDINGS = [
@@ -36,28 +33,20 @@ class OptionsEditScreen(Screen):
         super().__init__(**kwargs)
         self.options_list: List[Dict[str, Any]] = []
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
-
+    def compose_content(self) -> ComposeResult:
         app_info = getattr(self.app, "selected_app", {})
         app_name = app_info.get("appName", "App")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+        with Vertical(classes="card list-card"):
+            yield Label(f"⚙️ Configure Patch Options for [bold $enh-accent]{app_name}[/]", classes="card-title")
+            yield Label("Select an option below to modify its value, or proceed to start patching:", classes="card-desc")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label(f"⚙️ Configure Patch Options for [bold $enh-accent]{app_name}[/]", classes="card-title")
-                yield Label("Select an option below to modify its value, or proceed to start patching:", classes="card-desc")
+            with ButtonBar():
+                yield Button("🚀 Start Patching [S]", id="btn-start", classes="btn-primary")
+                yield Button("🔄 Reset Defaults [R]", id="btn-reset")
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-                with ButtonBar():
-                    yield Button("🚀 Start Patching [S]", id="btn-start", classes="btn-primary")
-                    yield Button("🔄 Reset Defaults [R]", id="btn-reset")
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-                yield ListView(id="options-list")
-
-        yield Footer()
+            yield ListView(id="options-list")
 
     def on_mount(self) -> None:
         self.load_options()

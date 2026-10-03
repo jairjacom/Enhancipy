@@ -6,18 +6,15 @@ Allows users to browse and switch between 8 handcrafted color themes with live p
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView
+from textual.widgets import Button, Label, ListItem, ListView
 
-from src.environment import env
+from src.tui.screens.base import BaseScreen
 from src.theme import THEMES, get_current_theme, palette, set_current_theme
 from src.tui.widgets.dialogs import MessageDialog
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
-class ThemeSelectScreen(Screen):
+class ThemeSelectScreen(BaseScreen):
     """Screen for selecting and previewing UI color themes."""
 
     BINDINGS = [
@@ -25,25 +22,17 @@ class ThemeSelectScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
-
+    def compose_content(self) -> ComposeResult:
         cur_theme = get_current_theme()
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+        with Vertical(classes="card list-card"):
+            yield Label("🎨 Personalize EnhanciPy Theme", classes="card-title")
+            yield Label(f"Current Theme: [bold {cur_theme.accent}]{cur_theme.name}[/]", id="active-theme-label", classes="card-desc")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label("🎨 Personalize EnhanciPy Theme", classes="card-title")
-                yield Label(f"Current Theme: [bold {cur_theme.accent}]{cur_theme.name}[/]", id="active-theme-label", classes="card-desc")
+            with ButtonBar():
+                yield Button("🔙 Back to Settings [B]", id="btn-back", classes="btn-secondary")
 
-                with ButtonBar():
-                    yield Button("🔙 Back to Settings [B]", id="btn-back", classes="btn-secondary")
-
-                yield ListView(id="themes-list")
-
-        yield Footer()
+            yield ListView(id="themes-list")
 
     def on_mount(self) -> None:
         self.populate_themes()

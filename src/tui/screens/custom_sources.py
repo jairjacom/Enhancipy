@@ -8,19 +8,16 @@ from typing import List, Optional
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView
+from textual.widgets import Button, Label, ListItem, ListView
 
-from src.environment import env
 from src.sources import SourceInfo, sources_mgr
+from src.tui.screens.base import BaseScreen
 from src.theme import palette
 from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
-class CustomSourcesScreen(Screen):
+class CustomSourcesScreen(BaseScreen):
     """Custom sources CRUD manager screen."""
 
     BINDINGS = [
@@ -30,25 +27,17 @@ class CustomSourcesScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card list-card"):
+            yield Label("➕ Custom Sources Management", classes="card-title")
+            yield Label("Add or manage custom ReVanced / Morphe patch repositories:", classes="card-desc")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+            with ButtonBar():
+                yield Button("➕ Add New Source [A]", id="btn-add", classes="btn-primary")
+                yield Button("📖 Description & Help [H]", id="btn-help")
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label("➕ Custom Sources Management", classes="card-title")
-                yield Label("Add or manage custom ReVanced / Morphe patch repositories:", classes="card-desc")
-
-                with ButtonBar():
-                    yield Button("➕ Add New Source [A]", id="btn-add", classes="btn-primary")
-                    yield Button("📖 Description & Help [H]", id="btn-help")
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-                yield ListView(id="custom-sources-list")
-
-        yield Footer()
+            yield ListView(id="custom-sources-list")
 
     def on_mount(self) -> None:
         self.populate_custom_sources()

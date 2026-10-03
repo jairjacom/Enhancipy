@@ -11,19 +11,16 @@ from typing import Any, Dict, Optional
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label
+from textual.widgets import Button, Label
 
-from src.environment import env
 from src.features import pothelper_mgr
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import DownloadProgressModal, MessageDialog, ProgressModal
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 from src.utils import DownloadResult, format_size
 
 
-class PotHelperScreen(Screen):
+class PotHelperScreen(BaseScreen):
     """PotHelper release viewer & downloader screen."""
 
     BINDINGS = [
@@ -36,44 +33,36 @@ class PotHelperScreen(Screen):
         super().__init__(**kwargs)
         self.selected_info: Optional[Dict[str, Any]] = None
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card"):
+            yield Label("🛠️ Fetch PotHelper", classes="card-title")
+            yield Label(
+                "Download the latest PotHelper APK (MorpheApp/PotHelper).\n"
+                "Saved to: Internal Storage/Enhancify/Dependencies/",
+                classes="card-desc",
+            )
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
-
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card"):
-                yield Label("🛠️ Fetch PotHelper", classes="card-title")
-                yield Label(
-                    "Download the latest PotHelper APK (MorpheApp/PotHelper).\n"
-                    "Saved to: Internal Storage/Enhancify/Dependencies/",
-                    classes="card-desc",
+            with ButtonBar():
+                yield Button(
+                    "🔄 Fetch Release Info",
+                    id="btn-fetch",
+                    classes="btn-primary",
                 )
-
-                with ButtonBar():
-                    yield Button(
-                        "🔄 Fetch Release Info",
-                        id="btn-fetch",
-                        classes="btn-primary",
-                    )
-                    yield Button(
-                        "⚡ Download APK [D]",
-                        id="btn-download",
-                        classes="btn-primary",
-                        disabled=True,
-                    )
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-            with VerticalScroll(classes="card detail-card"):
-                yield Label("📋 Release Changelog", classes="card-title")
-                yield Label(
-                    "Tap 'Fetch Release Info' to load the latest PotHelper release.",
-                    id="changelog-label",
-                    classes="card-desc",
+                yield Button(
+                    "⚡ Download APK [D]",
+                    id="btn-download",
+                    classes="btn-primary",
+                    disabled=True,
                 )
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-        yield Footer()
+        with VerticalScroll(classes="card detail-card"):
+            yield Label("📋 Release Changelog", classes="card-title")
+            yield Label(
+                "Tap 'Fetch Release Info' to load the latest PotHelper release.",
+                id="changelog-label",
+                classes="card-desc",
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id
