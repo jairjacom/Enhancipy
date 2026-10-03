@@ -4,21 +4,18 @@ Handles deletion of cached assets, temporary build files, patched output APKs,
 and stock app backups to free up device storage.
 """
 
-from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, Static
+from textual.containers import Vertical
+from textual.widgets import Button, Label
 
 from src.assets import assets_mgr
-from src.environment import env
 from src.features import storage_ops
+from src.tui.screens.base import BaseScreen
+from src.tui.widgets.button_bar import ButtonBar
 from src.tui.widgets.dialogs import ConfirmDialog, MessageDialog
-from src.tui.widgets.header import CyberHeader
 
 
-class StorageManagerScreen(Screen):
+class StorageManagerScreen(BaseScreen):
     """Storage and cleanup manager screen."""
 
     BINDINGS = [
@@ -26,25 +23,17 @@ class StorageManagerScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card"):
+            yield Label("🗑️ Storage & File Cleaner", classes="card-title")
+            yield Label("Manage internal storage and workspace cache:", classes="card-desc")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
-
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card"):
-                yield Label("🗑️ Storage & File Cleaner", classes="card-title")
-                yield Label("Manage internal storage and workspace cache:", classes="card-desc")
-
-                with Vertical():
-                    yield Button("🗑️ Delete Internal Storage Patched APKs", id="btn-del-patched", classes="btn-danger")
-                    yield Button("🗑️ Delete Terminal Stock / Build APKs", id="btn-del-terminal", classes="btn-danger")
-                    yield Button("🗑️ Delete CLI & Patch Assets", id="btn-del-assets", classes="btn-danger")
-                    yield Button("📦 Backup Stock Apps to Internal Storage", id="btn-backup-stock", classes="btn-primary")
-                    yield Button("🔙 Back to Main Menu [B]", id="btn-back", classes="btn-secondary")
-
-        yield Footer()
+            with ButtonBar():
+                yield Button("🗑️ Delete Internal Storage Patched APKs", id="btn-del-patched", classes="btn-danger")
+                yield Button("🗑️ Delete Terminal Stock / Build APKs", id="btn-del-terminal", classes="btn-danger")
+                yield Button("🗑️ Delete CLI & Patch Assets", id="btn-del-assets", classes="btn-danger")
+                yield Button("📦 Backup Stock Apps to Internal Storage", id="btn-backup-stock", classes="btn-primary")
+                yield Button("🔙 Back to Main Menu [B]", id="btn-back", classes="btn-secondary")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id

@@ -10,20 +10,17 @@ from typing import Optional
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView
+from textual.widgets import Button, Label, ListItem, ListView
 
-from src.environment import env
 from src.features import keystore_mgr
 from src.theme import palette
+from src.tui.screens.base import BaseScreen
 from src.tui.screens.file_picker import FilePickerScreen
 from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
-class KeystoreManagerScreen(Screen):
+class KeystoreManagerScreen(BaseScreen):
     """Keystore generation and management screen."""
 
     BINDINGS = [
@@ -34,26 +31,18 @@ class KeystoreManagerScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card list-card"):
+            yield Label("🔑 Custom Keystore Management", classes="card-title")
+            yield Label("Generate or import custom cryptographic keystores for signing patched APKs:", classes="card-desc")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+            with ButtonBar():
+                yield Button("⚡ Generate Keystore [G]", id="btn-gen", classes="btn-primary")
+                yield Button("📥 Import File [I]", id="btn-import")
+                yield Button("🗑️ Delete All [D]", id="btn-delete", classes="btn-danger")
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label("🔑 Custom Keystore Management", classes="card-title")
-                yield Label("Generate or import custom cryptographic keystores for signing patched APKs:", classes="card-desc")
-
-                with ButtonBar():
-                    yield Button("⚡ Generate Keystore [G]", id="btn-gen", classes="btn-primary")
-                    yield Button("📥 Import File [I]", id="btn-import")
-                    yield Button("🗑️ Delete All [D]", id="btn-delete", classes="btn-danger")
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-                yield ListView(id="keystores-list")
-
-        yield Footer()
+            yield ListView(id="keystores-list")
 
     def on_mount(self) -> None:
         self.populate_keystores()

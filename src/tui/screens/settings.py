@@ -12,12 +12,10 @@ from typing import Dict, List, Optional
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label
+from textual.widgets import Button, Label
 
 from src.config import config
-from src.environment import env
+from src.tui.screens.base import BaseScreen
 from src.theme import get_current_theme
 from src.tui.widgets.dialogs import (
     AppearanceDialog,
@@ -27,7 +25,6 @@ from src.tui.widgets.dialogs import (
     ProgressModal,
     ToggleSwitchDialog,
 )
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
@@ -52,7 +49,7 @@ RISH_FLAGS = [
 ]
 
 
-class SettingsScreen(Screen):
+class SettingsScreen(BaseScreen):
     """Configure screen — category buttons, options in small centred dialogs."""
 
     BINDINGS = [
@@ -61,35 +58,27 @@ class SettingsScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
-
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
-
+    def compose_content(self) -> ComposeResult:
         # Single card: with two auto-height cards Textual 8.x splits the
         # container between them, which squashes the button rows.
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card"):
-                yield Label("⚙️ Configure", classes="card-title")
-                yield Label("Open a module below to manage its options:", classes="card-desc")
+        with Vertical(classes="card"):
+            yield Label("⚙️ Configure", classes="card-title")
+            yield Label("Open a module below to manage its options:", classes="card-desc")
 
-                with ButtonBar():
-                    yield Button("🎨 Appearance & Themes", id="cat-appearance", classes="btn-primary")
-                    yield Button("🔧 Configuration Modules", id="cat-modules")
+            with ButtonBar():
+                yield Button("🎨 Appearance & Themes", id="cat-appearance", classes="btn-primary")
+                yield Button("🔧 Configuration Modules", id="cat-modules")
 
-                with ButtonBar():
-                    yield Button("⚡ Features Toggles", id="cat-features")
-                    yield Button("🛡️ Rish Installer Flags", id="cat-rish")
+            with ButtonBar():
+                yield Button("⚡ Features Toggles", id="cat-features")
+                yield Button("🛡️ Rish Installer Flags", id="cat-rish")
 
-                # Live summary of current toggle states (updates after Save)
-                yield Label("📊 Current State", classes="card-title")
-                yield Label("", id="state-summary", classes="card-desc")
+            # Live summary of current toggle states (updates after Save)
+            yield Label("📊 Current State", classes="card-title")
+            yield Label("", id="state-summary", classes="card-desc")
 
-                with ButtonBar():
-                    yield Button("🔙 Back to Main Menu [B]", id="btn-back", classes="btn-secondary")
-
-        yield Footer()
+            with ButtonBar():
+                yield Button("🔙 Back to Main Menu [B]", id="btn-back", classes="btn-secondary")
 
     def on_mount(self) -> None:
         self.refresh_summary()

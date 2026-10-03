@@ -3,20 +3,14 @@ Enhancify Main Menu / Dashboard Screen
 Provides navigation to all primary Enhancify features with cybernetic styling and hotkeys.
 """
 
-from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Container, Grid, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, Static
+from textual.containers import Vertical
+from textual.widgets import Button, Label
 
-from src.config import config
-from src.environment import env
-from src.tui.widgets.header import CyberHeader
-from src.tui.widgets.status_bar import CyberStatusBar
+from src.tui.screens.base import BaseScreen
 
 
-class MainMenuScreen(Screen):
+class MainMenuScreen(BaseScreen):
     """Main menu dashboard for Enhancify."""
 
     BINDINGS = [
@@ -31,36 +25,29 @@ class MainMenuScreen(Screen):
         ("q", "quit", "Exit EnhanciPy"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
-        arch = env.get_arch()
+    SHOW_STATUS_BAR = True
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
-        # Classic parity: "Initiated Mode / Status / Arch" block on top of the menu
-        yield CyberStatusBar(mode_label=mode_label, online_status=net_status, arch=arch)
+    def compose_content(self) -> ComposeResult:
+        has_root = self.priv[0]
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card"):
-                yield Label("🔥 Quick Actions", classes="card-title")
-                yield Label("Select an action below or use keyboard shortcuts:", classes="card-desc")
+        with Vertical(classes="card"):
+            yield Label("🔥 Quick Actions", classes="card-title")
+            yield Label("Select an action below or use keyboard shortcuts:", classes="card-desc")
 
-                with Vertical():
-                    yield Button("🚀 Patch App [P]", id="btn-patch", classes="btn-primary")
-                    yield Button("📝 Change Source [S]", id="btn-source")
-                    yield Button("🎨 UI Themes [T]", id="btn-themes")
-                    yield Button("📦 Bundle Patcher (Experimental) [B]", id="btn-bundle")
-                    yield Button("⚙️ Configure & Settings [C]", id="btn-settings")
-                    yield Button("🔌 Fetch Dependency [G]", id="btn-dependency")
-                    yield Button("🗑️ Storage Manager [D]", id="btn-storage")
-                    yield Button("📋 Specs & Changelog [I]", id="btn-specs")
+            with Vertical():
+                yield Button("🚀 Patch App [P]", id="btn-patch", classes="btn-primary")
+                yield Button("📝 Change Source [S]", id="btn-source")
+                yield Button("🎨 UI Themes [T]", id="btn-themes")
+                yield Button("📦 Bundle Patcher (Experimental) [B]", id="btn-bundle")
+                yield Button("⚙️ Configure & Settings [C]", id="btn-settings")
+                yield Button("🔌 Fetch Dependency [G]", id="btn-dependency")
+                yield Button("🗑️ Storage Manager [D]", id="btn-storage")
+                yield Button("📋 Specs & Changelog [I]", id="btn-specs")
 
-                    if has_root:
-                        yield Button("🔒 Unmount Patched App", id="btn-unmount", classes="btn-danger")
+                if has_root:
+                    yield Button("🔒 Unmount Patched App", id="btn-unmount", classes="btn-danger")
 
-                    yield Button("🚪 Exit EnhanciPy [Q]", id="btn-exit", classes="btn-danger")
-
-        yield Footer()
+                yield Button("🚪 Exit EnhanciPy [Q]", id="btn-exit", classes="btn-danger")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id

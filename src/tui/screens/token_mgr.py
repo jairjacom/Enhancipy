@@ -10,18 +10,15 @@ import requests
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, Static
+from textual.widgets import Button, Label, Static
 
 from src.config import config
-from src.environment import env
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
-class TokenManagerScreen(Screen):
+class TokenManagerScreen(BaseScreen):
     """GitHub Token configuration screen."""
 
     BINDINGS = [
@@ -32,34 +29,26 @@ class TokenManagerScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card"):
+            yield Label("🎫 GitHub Personal Access Token (Classic)", classes="card-title")
+            yield Label(self.get_token_status_text(), id="token-status-label", classes="card-desc")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+            with ButtonBar():
+                yield Button("➕ Add / Update Token [A]", id="btn-add", classes="btn-primary")
+                yield Button("🗑️ Delete Token [D]", id="btn-delete", classes="btn-danger")
+                yield Button("📖 Guide [G]", id="btn-guide")
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card"):
-                yield Label("🎫 GitHub Personal Access Token (Classic)", classes="card-title")
-                yield Label(self.get_token_status_text(), id="token-status-label", classes="card-desc")
-
-                with ButtonBar():
-                    yield Button("➕ Add / Update Token [A]", id="btn-add", classes="btn-primary")
-                    yield Button("🗑️ Delete Token [D]", id="btn-delete", classes="btn-danger")
-                    yield Button("📖 Guide [G]", id="btn-guide")
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-            with VerticalScroll(classes="card detail-card"):
-                yield Label("⚡ Benefits of GitHub Token", classes="card-title")
-                benefits = (
-                    "• Increases API rate limit from 60 requests/hour to 5,000 requests/hour\n"
-                    "• Eliminates 'API Rate Limit Exceeded' warnings when downloading patches & CLI\n"
-                    "• Speeds up parallel tag fetching across multiple sources\n"
-                    "• Stored securely locally in github_token.json"
-                )
-                yield Label(benefits, classes="card-desc")
-
-        yield Footer()
+        with VerticalScroll(classes="card detail-card"):
+            yield Label("⚡ Benefits of GitHub Token", classes="card-title")
+            benefits = (
+                "• Increases API rate limit from 60 requests/hour to 5,000 requests/hour\n"
+                "• Eliminates 'API Rate Limit Exceeded' warnings when downloading patches & CLI\n"
+                "• Speeds up parallel tag fetching across multiple sources\n"
+                "• Stored securely locally in github_token.json"
+            )
+            yield Label(benefits, classes="card-desc")
 
     def get_token_status_text(self) -> str:
         tok = config.get_github_token()

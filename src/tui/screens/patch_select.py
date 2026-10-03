@@ -12,18 +12,15 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from src.tui.widgets.content_container import ContentContainer
 from textual.message import Message
-from textual.screen import Screen
-from textual.widgets import Button, Checkbox, Footer, Input, Label, ListItem, ListView, Static
+from textual.widgets import Button, Checkbox, Input, Label, ListItem, ListView, Static
 
 from src.assets import assets_mgr
 from src.config import config
-from src.environment import env
 from src.theme import palette
 from src.patches import patches_mgr
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import MessageDialog, PatchDescriptionDialog
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
@@ -107,7 +104,7 @@ class PatchItem(ListItem):
     # when it follows a long press (see PatchSelectScreen.on_list_view_selected).
 
 
-class PatchSelectScreen(Screen):
+class PatchSelectScreen(BaseScreen):
     """Patch selection checklist screen."""
 
     BINDINGS = [
@@ -127,40 +124,32 @@ class PatchSelectScreen(Screen):
         self.patch_descriptions: Dict[str, str] = {}
         self.patch_options: List[Dict[str, Any]] = []
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
-
+    def compose_content(self) -> ComposeResult:
         app_info = getattr(self.app, "selected_app", {})
         app_name = app_info.get("appName", "App")
         source_name = config.get("SOURCE", "Anddea")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+        with Vertical(classes="card list-card"):
+            yield Label(f"🛠️ Select Patches for [bold $enh-accent]{app_name}[/]", classes="card-title")
+            yield Label(f"📦 Source: {source_name}", id="patch-source-label", classes="card-desc")
+            yield Label("Enabled: 0 / 0", id="patch-count-label", classes="card-desc")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label(f"🛠️ Select Patches for [bold $enh-accent]{app_name}[/]", classes="card-title")
-                yield Label(f"📦 Source: {source_name}", id="patch-source-label", classes="card-desc")
-                yield Label("Enabled: 0 / 0", id="patch-count-label", classes="card-desc")
+            yield Input(placeholder="🔍 Search patches by name or keyword...", id="search-patches")
+            yield Label("💡 Tip: hold (long-press) a patch row to open its full description.", id="long-press-hint", classes="card-desc")
 
-                yield Input(placeholder="🔍 Search patches by name or keyword...", id="search-patches")
-                yield Label("💡 Tip: hold (long-press) a patch row to open its full description.", id="long-press-hint", classes="card-desc")
+            with ButtonBar():
+                yield Button("⚡ Recommended [R]", id="btn-rec", classes="btn-primary")
+                yield Button("✅ Select All [A]", id="btn-all")
+                yield Button("❌ Deselect All [D]", id="btn-none")
+            with ButtonBar():
+                yield Button("🚀 Next: Options [N]", id="btn-next", classes="btn-primary")
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-                with ButtonBar():
-                    yield Button("⚡ Recommended [R]", id="btn-rec", classes="btn-primary")
-                    yield Button("✅ Select All [A]", id="btn-all")
-                    yield Button("❌ Deselect All [D]", id="btn-none")
-                with ButtonBar():
-                    yield Button("🚀 Next: Options [N]", id="btn-next", classes="btn-primary")
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
+            yield ListView(id="patches-list")
 
-                yield ListView(id="patches-list")
-
-            with VerticalScroll(classes="card detail-card"):
-                yield Label("ℹ️ Patch Description", classes="card-title")
-                yield Label("Select a patch above to view its details.", id="patch-desc-label", classes="card-desc")
-
-        yield Footer()
+        with VerticalScroll(classes="card detail-card"):
+            yield Label("ℹ️ Patch Description", classes="card-title")
+            yield Label("Select a patch above to view its details.", id="patch-desc-label", classes="card-desc")
 
     def on_mount(self) -> None:
         self.load_patches()

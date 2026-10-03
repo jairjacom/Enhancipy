@@ -9,13 +9,10 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ProgressBar, RichLog, Static
+from textual.containers import Vertical
+from textual.widgets import Button, Label, ProgressBar, RichLog
 
 from src.assets import assets_mgr
 from src.config import config
@@ -23,13 +20,13 @@ from src.environment import env
 from src.installer import CONFLICT_VERSION_DOWNGRADE, InstallResult, app_installer, rish_export_name
 from src.patcher import PatchExecutionConfig, patcher_engine
 from src.theme import palette
+from src.tui.screens.base import BaseScreen
 from src.tui.screens.main_menu import MainMenuScreen
 from src.tui.widgets.dialogs import ConfirmDialog, MessageDialog, ProgressModal
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
-class PatchProgressScreen(Screen):
+class PatchProgressScreen(BaseScreen):
     """Live patch execution console and installer."""
 
     BINDINGS = [
@@ -45,33 +42,25 @@ class PatchProgressScreen(Screen):
         self.output_apk: Optional[Path] = None
         self._install_ctx: dict = {}
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
-
+    def compose_content(self) -> ComposeResult:
         app_info = getattr(self.app, "selected_app", {})
         app_name = app_info.get("appName", "App")
         app_ver = app_info.get("version", "")
         source_name = config.get("SOURCE", "Anddea")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+        with Vertical(classes="card"):
+            yield Label(f"🚀 Patching [bold $enh-accent]{app_name} {app_ver}[/] with [bold $enh-accent-2]{source_name}[/]", classes="card-title")
+            yield Label("Status: [bold $enh-warning]Initializing JVM & CLI Patcher...[/]", id="status-label", classes="card-desc")
+            yield ProgressBar(total=100, show_eta=False, id="progress-bar")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card"):
-                yield Label(f"🚀 Patching [bold $enh-accent]{app_name} {app_ver}[/] with [bold $enh-accent-2]{source_name}[/]", classes="card-title")
-                yield Label("Status: [bold $enh-warning]Initializing JVM & CLI Patcher...[/]", id="status-label", classes="card-desc")
-                yield ProgressBar(total=100, show_eta=False, id="progress-bar")
+            with ButtonBar(id="action-buttons"):
+                yield Button("⚡ Install & Finalize [I]", id="btn-install", classes="btn-primary", disabled=True)
+                yield Button("📤 Share Logs [S]", id="btn-share")
+                yield Button("🏠 Main Menu [M]", id="btn-menu", classes="btn-secondary")
 
-                with ButtonBar(id="action-buttons"):
-                    yield Button("⚡ Install & Finalize [I]", id="btn-install", classes="btn-primary", disabled=True)
-                    yield Button("📤 Share Logs [S]", id="btn-share")
-                    yield Button("🏠 Main Menu [M]", id="btn-menu", classes="btn-secondary")
-
-            with Vertical(classes="card"):
-                yield Label("📜 Live Console Output", classes="card-title")
-                yield RichLog(id="log-viewer", highlight=True, markup=True)
-
-        yield Footer()
+        with Vertical(classes="card log-card"):
+            yield Label("📜 Live Console Output", classes="card-title")
+            yield RichLog(id="log-viewer", highlight=True, markup=True)
 
     def on_mount(self) -> None:
         self.start_patching_process()

@@ -17,16 +17,14 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Input, Label, ListItem, ListView
+from textual.widgets import Button, Input, Label, ListItem, ListView
 
 from src.antisplit import antisplit_mgr
 from src.apkmirror import apkmirror_scraper
 from src.assets import AssetReleaseInfo, assets_mgr
 from src.config import config
-from src.environment import env
 from src.theme import palette
+from src.tui.screens.base import BaseScreen
 from src.tui.screens.file_picker import FilePickerScreen
 from src.tui.widgets.dialogs import (
     ChangelogDialog,
@@ -35,7 +33,6 @@ from src.tui.widgets.dialogs import (
     ParseProgressModal,
     ProgressModal,
 )
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 from src.utils import DownloadResult
 
@@ -43,7 +40,7 @@ import json
 import shutil
 
 
-class AppSelectScreen(Screen):
+class AppSelectScreen(BaseScreen):
     """App selection screen with live search."""
 
     BINDINGS = [
@@ -60,27 +57,19 @@ class AppSelectScreen(Screen):
         self.active_source = config.get("SOURCE", "Anddea")
         self.release_info: Optional[AssetReleaseInfo] = None
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card list-card"):
+            yield Label("📱 Select Target Application", classes="card-title")
+            yield Label("Choose an application to patch or import an APK from storage:", classes="card-desc")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+            yield Input(placeholder="🔍 Search apps by name or package...", id="search-input")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label("📱 Select Target Application", classes="card-title")
-                yield Label("Choose an application to patch or import an APK from storage:", classes="card-desc")
+            with ButtonBar():
+                yield Button("📥 Import File [I]", id="btn-import", classes="btn-primary")
+                yield Button("🔄 Refresh [R]", id="btn-refresh")
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-                yield Input(placeholder="🔍 Search apps by name or package...", id="search-input")
-
-                with ButtonBar():
-                    yield Button("📥 Import File [I]", id="btn-import", classes="btn-primary")
-                    yield Button("🔄 Refresh [R]", id="btn-refresh")
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-                yield ListView(id="apps-list")
-
-        yield Footer()
+            yield ListView(id="apps-list")
 
     def on_mount(self) -> None:
         self.active_source = config.get("SOURCE", "Anddea")
