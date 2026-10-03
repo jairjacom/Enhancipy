@@ -9,19 +9,17 @@ from typing import List
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView
+from textual.widgets import Button, Label, ListItem, ListView
 
 from src.environment import env
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import ConfirmDialog, MessageDialog
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 from src.theme import palette
 from src.utils import run_command
 
 
-class UnmountScreen(Screen):
+class UnmountScreen(BaseScreen):
     """Root mode unmount manager screen."""
 
     BINDINGS = [
@@ -29,23 +27,15 @@ class UnmountScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card list-card"):
+            yield Label("🔒 Unmount Root Patched Application", classes="card-title")
+            yield Label("Select an active mounted application to unmount and remove boot scripts:", classes="card-desc")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+            with ButtonBar():
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label("🔒 Unmount Root Patched Application", classes="card-title")
-                yield Label("Select an active mounted application to unmount and remove boot scripts:", classes="card-desc")
-
-                with ButtonBar():
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-                yield ListView(id="mounted-list")
-
-        yield Footer()
+            yield ListView(id="mounted-list")
 
     def on_mount(self) -> None:
         self.populate_mounted()

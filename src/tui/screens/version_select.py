@@ -12,15 +12,13 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView
+from textual.widgets import Button, Label, ListItem, ListView
 
 from src.antisplit import antisplit_mgr
 from src.apkmirror import ScrapedVersion, apkmirror_scraper
 from src.config import config
-from src.environment import env
 from src.theme import palette
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import (
     ConfirmDialog,
     DownloadProgressModal,
@@ -28,11 +26,10 @@ from src.tui.widgets.dialogs import (
     ProgressModal,
     ThreeChoiceDialog,
 )
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 
 
-class VersionSelectScreen(Screen):
+class VersionSelectScreen(BaseScreen):
     """Screen for selecting app version to download."""
 
     BINDINGS = [
@@ -46,28 +43,20 @@ class VersionSelectScreen(Screen):
         super().__init__(**kwargs)
         self.versions_list: List[ScrapedVersion] = []
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
-
+    def compose_content(self) -> ComposeResult:
         app_info = getattr(self.app, "selected_app", {})
         app_name = app_info.get("appName", "App")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+        with Vertical(classes="card list-card"):
+            yield Label(f"📦 Select Version for [bold $enh-accent]{app_name}[/]", classes="card-title")
+            yield Label("Select a version from APKMirror. [RECOMMENDED] versions are tested by patch developers:", classes="card-desc")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label(f"📦 Select Version for [bold $enh-accent]{app_name}[/]", classes="card-title")
-                yield Label("Select a version from APKMirror. [RECOMMENDED] versions are tested by patch developers:", classes="card-desc")
+            with ButtonBar():
+                yield Button("⚡ Auto Recommended [A]", id="btn-auto", classes="btn-primary")
+                yield Button("🔄 Refresh List [R]", id="btn-refresh")
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-                with ButtonBar():
-                    yield Button("⚡ Auto Recommended [A]", id="btn-auto", classes="btn-primary")
-                    yield Button("🔄 Refresh List [R]", id="btn-refresh")
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-                yield ListView(id="versions-list")
-
-        yield Footer()
+            yield ListView(id="versions-list")
 
     def on_mount(self) -> None:
         self.load_versions()

@@ -8,14 +8,11 @@ from typing import List, Optional
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView
+from textual.containers import Vertical
+from textual.widgets import Button, Label, ListItem, ListView
 
-from src.environment import env
 from src.theme import palette
-from src.tui.widgets.header import CyberHeader
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.button_bar import ButtonBar
 from src.utils import format_size
 
@@ -23,7 +20,7 @@ from src.utils import format_size
 ALLOWED_EXTENSIONS = {".apk", ".apkm", ".xapk", ".apks", ".json"}
 
 
-class FilePickerScreen(Screen[Optional[Path]]):
+class FilePickerScreen(BaseScreen[Optional[Path]]):
     """File browser screen."""
 
     BINDINGS = [
@@ -49,24 +46,16 @@ class FilePickerScreen(Screen[Optional[Path]]):
 
         self.allowed_exts = allowed_exts or ALLOWED_EXTENSIONS
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card list-card"):
+            yield Label("📂 Select File from Storage", classes="card-title")
+            yield Label(f"Current Path: [bold $enh-accent-2]{self.current_dir}[/]", id="path-label", classes="card-desc")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+            with ButtonBar():
+                yield Button("⬆️ Up Directory [U]", id="btn-up")
+                yield Button("❌ Cancel [B]", id="btn-cancel", classes="btn-secondary")
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label("📂 Select File from Storage", classes="card-title")
-                yield Label(f"Current Path: [bold $enh-accent-2]{self.current_dir}[/]", id="path-label", classes="card-desc")
-
-                with ButtonBar():
-                    yield Button("⬆️ Up Directory [U]", id="btn-up")
-                    yield Button("❌ Cancel [B]", id="btn-cancel", classes="btn-secondary")
-
-                yield ListView(id="file-list")
-
-        yield Footer()
+            yield ListView(id="file-list")
 
     def on_mount(self) -> None:
         self.populate_directory()

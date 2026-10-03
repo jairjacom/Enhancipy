@@ -12,20 +12,17 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView
+from textual.widgets import Button, Label, ListItem, ListView
 
-from src.environment import env
 from src.features import GMSCORE_PROVIDERS, GmsCoreProvider, gmscore_mgr
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import DownloadProgressModal, MessageDialog, ProgressModal
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 from src.theme import palette
 from src.utils import DownloadResult, format_size
 
 
-class GmsCoreScreen(Screen):
+class GmsCoreScreen(BaseScreen):
     """GmsCore MicroG provider selection & downloader screen."""
 
     BINDINGS = [
@@ -39,41 +36,33 @@ class GmsCoreScreen(Screen):
         self.provider_releases: Dict[str, Dict[str, Any]] = {}
         self.selected_info: Optional[Dict[str, Any]] = None
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card list-card"):
+            yield Label("🔌 Select GmsCore (MicroG) Provider", classes="card-title")
+            yield Label(
+                "Choose a GmsCore build to view release notes and download.\n"
+                "Saved to: Internal Storage/Enhancify/Dependencies/",
+                classes="card-desc",
+            )
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
-
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                yield Label("🔌 Select GmsCore (MicroG) Provider", classes="card-title")
-                yield Label(
-                    "Choose a GmsCore build to view release notes and download.\n"
-                    "Saved to: Internal Storage/Enhancify/Dependencies/",
-                    classes="card-desc",
+            with ButtonBar():
+                yield Button(
+                    "⚡ Download Selected APK [D]",
+                    id="btn-download",
+                    classes="btn-primary",
+                    disabled=True,
                 )
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-                with ButtonBar():
-                    yield Button(
-                        "⚡ Download Selected APK [D]",
-                        id="btn-download",
-                        classes="btn-primary",
-                        disabled=True,
-                    )
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
+            yield ListView(id="gmscore-list")
 
-                yield ListView(id="gmscore-list")
-
-            with VerticalScroll(classes="card detail-card"):
-                yield Label("📋 Release Changelog", classes="card-title")
-                yield Label(
-                    "Select a provider above to load its release details.",
-                    id="changelog-label",
-                    classes="card-desc",
-                )
-
-        yield Footer()
+        with VerticalScroll(classes="card detail-card"):
+            yield Label("📋 Release Changelog", classes="card-title")
+            yield Label(
+                "Select a provider above to load its release details.",
+                id="changelog-label",
+                classes="card-desc",
+            )
 
     def on_mount(self) -> None:
         self.populate_providers()

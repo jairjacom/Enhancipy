@@ -1,5 +1,17 @@
 # EnhanciPy Changelog
 
+## [v1.3.4] — uniform windows that adapt to the keyboard
+
+### Added
+
+- **Every screen now shares the same window layout** — header, content
+  area, and footer line up identically across the whole app instead of
+  drifting slightly from screen to screen.
+- **Lists and scrolling panels now grow and shrink with your terminal
+  size.** When the on-screen keyboard hides, lists expand to use the
+  extra room; when it pops up and shrinks the terminal, they shrink back
+  down instead of overflowing.
+
 ## [v1.3.3] — complete setup instructions on the project page
 
 ### Fixed

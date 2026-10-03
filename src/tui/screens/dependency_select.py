@@ -5,15 +5,13 @@ Mirrors bash Fetch_Dependency menu: choose GmsCore or PotHelper.
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label
+from textual.widgets import Button, Label
 
-from src.environment import env
-from src.tui.widgets.header import CyberHeader
+from src.tui.screens.base import BaseScreen
+from src.tui.widgets.button_bar import ButtonBar
 
 
-class DependencySelectScreen(Screen):
+class DependencySelectScreen(BaseScreen):
     """Top-level dependency picker (GmsCore / PotHelper)."""
 
     BINDINGS = [
@@ -23,33 +21,25 @@ class DependencySelectScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card"):
+            yield Label("🔌 Fetch Dependency", classes="card-title")
+            yield Label(
+                "Select a dependency to fetch (matches classic Fetch Dependency menu):",
+                classes="card-desc",
+            )
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
-
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card"):
-                yield Label("🔌 Fetch Dependency", classes="card-title")
-                yield Label(
-                    "Select a dependency to fetch (matches classic Fetch Dependency menu):",
-                    classes="card-desc",
+            with ButtonBar():
+                yield Button(
+                    "📱 Fetch GmsCore (MicroG) [G]",
+                    id="btn-fetch-gmscore",
+                    classes="btn-primary",
                 )
-
-                with Vertical():
-                    yield Button(
-                        "📱 Fetch GmsCore (MicroG) [G]",
-                        id="btn-fetch-gmscore",
-                        classes="btn-primary",
-                    )
-                    yield Button(
-                        "🛠️ Fetch PotHelper [H]",
-                        id="btn-fetch-pothelper",
-                    )
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
-
-        yield Footer()
+                yield Button(
+                    "🛠️ Fetch PotHelper [H]",
+                    id="btn-fetch-pothelper",
+                )
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id

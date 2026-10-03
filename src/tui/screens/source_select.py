@@ -9,21 +9,18 @@ from typing import Any, Dict, List, Optional
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, ListItem, ListView, Static
+from textual.containers import Vertical
+from textual.widgets import Button, Label, ListItem, ListView
 
 from src.config import config
-from src.environment import env
 from src.sources import SourceInfo, sources_mgr
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import MessageDialog, ProgressModal
-from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.button_bar import ButtonBar
 from src.theme import palette
 
 
-class SourceSelectScreen(Screen):
+class SourceSelectScreen(BaseScreen):
     """Screen for selecting active patch source or picking sources to start patching."""
 
     BINDINGS = [
@@ -40,44 +37,36 @@ class SourceSelectScreen(Screen):
         self.selected_multi_sources: List[str] = []
         self.displayed_sources: List[SourceInfo] = []
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
-
+    def compose_content(self) -> ComposeResult:
         is_multi = config.is_on("ENABLE_MULTIPATCHER")
         current_src = config.get("SOURCE", "Anddea")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
-
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card list-card"):
-                if self.is_patch_flow:
-                    if is_multi:
-                        yield Label("🚀 Step 1: Select Patch Sources (Multi-Patcher)", classes="card-title")
-                        yield Label("Select up to 3 sources to combine, then click Proceed [P / Enter]:", classes="card-desc")
-                    else:
-                        yield Label("🚀 Step 1: Select Patch Source", classes="card-title")
-                        yield Label("Choose a patch source below to load supported applications and proceed:", classes="card-desc")
+        with Vertical(classes="card list-card"):
+            if self.is_patch_flow:
+                if is_multi:
+                    yield Label("🚀 Step 1: Select Patch Sources (Multi-Patcher)", classes="card-title")
+                    yield Label("Select up to 3 sources to combine, then click Proceed [P / Enter]:", classes="card-desc")
                 else:
-                    if is_multi:
-                        yield Label("📦 Multi-Patcher Mode: Select up to 3 sources", classes="card-title")
-                        yield Label("Click sources to toggle selection (1 to 3 sources):", classes="card-desc")
-                    else:
-                        yield Label(f"📦 Active Source: [bold $enh-accent]{current_src}[/]", classes="card-title")
-                        yield Label("Select a patch source below or refresh tags from GitHub/GitLab:", classes="card-desc")
+                    yield Label("🚀 Step 1: Select Patch Source", classes="card-title")
+                    yield Label("Choose a patch source below to load supported applications and proceed:", classes="card-desc")
+            else:
+                if is_multi:
+                    yield Label("📦 Multi-Patcher Mode: Select up to 3 sources", classes="card-title")
+                    yield Label("Click sources to toggle selection (1 to 3 sources):", classes="card-desc")
+                else:
+                    yield Label(f"📦 Active Source: [bold $enh-accent]{current_src}[/]", classes="card-title")
+                    yield Label("Select a patch source below or refresh tags from GitHub/GitLab:", classes="card-desc")
 
-                with ButtonBar():
-                    if self.is_patch_flow or is_multi:
-                        yield Button("🚀 Proceed to Apps [P]", id="btn-proceed", classes="btn-primary")
-                    yield Button("🔄 Refresh Tags [R]", id="btn-refresh-tags", classes="btn-primary" if not (self.is_patch_flow or is_multi) else "-style-default")
-                    yield Button("➕ Custom Sources [C]", id="btn-custom-sources")
-                    yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
+            with ButtonBar():
+                if self.is_patch_flow or is_multi:
+                    yield Button("🚀 Proceed to Apps [P]", id="btn-proceed", classes="btn-primary")
+                yield Button("🔄 Refresh Tags [R]", id="btn-refresh-tags", classes="btn-primary" if not (self.is_patch_flow or is_multi) else "")
+                yield Button("➕ Custom Sources [C]", id="btn-custom-sources")
+                yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-                yield Label("", id="channel-hint", classes="card-desc")
+            yield Label("", id="channel-hint", classes="card-desc")
 
-                yield ListView(id="sources-list")
-
-        yield Footer()
+            yield ListView(id="sources-list")
 
     def on_mount(self) -> None:
         if not self.selected_multi_sources:

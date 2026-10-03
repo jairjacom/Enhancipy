@@ -7,18 +7,14 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from src.tui.widgets.content_container import ContentContainer
-from textual.screen import Screen
-from textual.widgets import Button, Footer, Label, Static
+from textual.containers import Vertical, VerticalScroll
+from textual.widgets import Button, Label
 
 from src.config import config
 from src.environment import env
-from src.tui.widgets.dialogs import ProgressModal
-from src.tui.widgets.header import CyberHeader
+from src.tui.screens.base import BaseScreen
 from src.tui.widgets.button_bar import ButtonBar
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent.parent  # repo root
@@ -49,7 +45,7 @@ def bundled_changelog(version: str) -> str:
     return "\n".join(lines[start:end]).strip()
 
 
-class SpecsScreen(Screen):
+class SpecsScreen(BaseScreen):
     """System specifications and release notes viewer screen."""
 
     BINDINGS = [
@@ -57,43 +53,35 @@ class SpecsScreen(Screen):
         ("escape", "back", "Back"),
     ]
 
-    def compose(self) -> ComposeResult:
-        has_root, has_rish, mode_label = env.check_privileges()
-        _, _, net_status = env.check_network()
+    def compose_content(self) -> ComposeResult:
+        with Vertical(classes="card"):
+            yield Label("🤖 Device & Runtime Specifications", classes="card-title")
 
-        yield CyberHeader(mode_label=mode_label, online_status=net_status)
+            specs = env.get_device_specs()
+            java_ver, java_pkg = env.detect_java_version()
 
-        with ContentContainer(classes="container-box"):
-            with Vertical(classes="card"):
-                yield Label("🤖 Device & Runtime Specifications", classes="card-title")
+            specs_lines = [
+                f"• Device Brand      : {specs.device_brand}",
+                f"• Device Model      : {specs.device_name}",
+                f"• CPU Architecture  : {specs.arch}",
+                f"• Screen DPI        : {specs.dpi}",
+                f"• Android Version   : {specs.android_version} (SDK {specs.sdk_version})",
+                f"• Kernel Version    : {specs.kernel_version}",
+                f"• Total RAM         : {specs.total_ram}",
+                f"• Available RAM     : {specs.available_ram_mb} MB",
+                f"• Storage Info      : {specs.storage_info}",
+                f"• System Locale     : {specs.locale}",
+                f"• Java Runtime      : OpenJDK {java_ver} ({java_pkg})",
+                f"• EnhanciPy Version : {specs.enhancify_version}",
+            ]
+            yield Label("\n".join(specs_lines), classes="card-desc")
 
-                specs = env.get_device_specs()
-                java_ver, java_pkg = env.detect_java_version()
+            with ButtonBar():
+                yield Button("🔙 Back to Main Menu [B]", id="btn-back", classes="btn-secondary")
 
-                specs_lines = [
-                    f"• Device Brand      : {specs.device_brand}",
-                    f"• Device Model      : {specs.device_name}",
-                    f"• CPU Architecture  : {specs.arch}",
-                    f"• Screen DPI        : {specs.dpi}",
-                    f"• Android Version   : {specs.android_version} (SDK {specs.sdk_version})",
-                    f"• Kernel Version    : {specs.kernel_version}",
-                    f"• Total RAM         : {specs.total_ram}",
-                    f"• Available RAM     : {specs.available_ram_mb} MB",
-                    f"• Storage Info      : {specs.storage_info}",
-                    f"• System Locale     : {specs.locale}",
-                    f"• Java Runtime      : OpenJDK {java_ver} ({java_pkg})",
-                    f"• EnhanciPy Version : {specs.enhancify_version}",
-                ]
-                yield Label("\n".join(specs_lines), classes="card-desc")
-
-                with ButtonBar():
-                    yield Button("🔙 Back to Main Menu [B]", id="btn-back", classes="btn-primary")
-
-            with VerticalScroll(classes="card detail-card"):
-                yield Label(f"📋 EnhanciPy {specs.enhancify_version} Changelog", classes="card-title")
-                yield Label("Loading release notes from GitHub...", id="changelog-label", classes="card-desc")
-
-        yield Footer()
+        with VerticalScroll(classes="card detail-card"):
+            yield Label(f"📋 EnhanciPy {specs.enhancify_version} Changelog", classes="card-title")
+            yield Label("Loading release notes from GitHub...", id="changelog-label", classes="card-desc")
 
     def on_mount(self) -> None:
         self.fetch_changelog()

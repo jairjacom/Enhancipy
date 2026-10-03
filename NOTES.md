@@ -212,4 +212,67 @@ grepped for any prior working-dir name — none found).
     `tests/test_rish_script.py` covering stderr-only probe output and
     `grep -qx` noise tolerance; new `TestPatchedPkgName` +
     renamed-package routing cases in `tests/test_installer.py`).
+- Added (this session): uniform auto-height window chrome across every
+  screen. New `src/tui/screens/base.py` (`BaseScreen`) composes
+  `CyberHeader → ContentContainer("container-box") → Footer` once; every
+  screen (except `boot_screen.py`, which has no window chrome, and the
+  `ModalScreen` dialogs in `src/tui/widgets/dialogs.py`, already uniform via
+  `.dialog-box`) now subclasses it and implements `compose_content()`
+  instead of repeating the boilerplate. `main_menu_screen` opts into the
+  extra `CyberStatusBar` via `SHOW_STATUS_BAR = True`; `FilePickerScreen`
+  (pushed as an instance, not registered in `App.SCREENS`) also migrated.
+  `src/tui/styles.tcss` list/scroll caps (`.list-card ListView`,
+  `.desc-scroll`, `.toggle-scroll`, `.select-scroll`) converted from fixed
+  row counts to `max-height: 60vh`, so lists grow when the Termux on-screen
+  keyboard hides (more terminal rows) and shrink when it shows — verified
+  live with `pilot.resize_terminal()` in `run_test()`, no keyboard-detection
+  code needed since Termux already resizes the pty and Textual's `vh` units
+  re-resolve on resize.
+  - **Textual 8.2.8 layout quirk found while verifying this**: a
+    percentage `max-height` (`max-height: 100%`) on an `auto`-height
+    container whose own parent has collapsed to a very small resolved size
+    (here: `.list-card`/`.detail-card` inside `ContentContainer` on a
+    ~13-row-or-shorter terminal, once header+footer+card chrome eats
+    nearly the whole viewport) stops being enforced at all — the
+    container's `min-height` is also silently ignored, and a descendant's
+    *own* unrelated `max-height: 60vh` cap gets bypassed too, so a 20-item
+    `ListView` rendered at its full ~40-row content height instead of
+    being capped. Reproduced in isolation (synthetic `BaseScreen` with a
+    fake `ListView`) and confirmed the exact break point: terminal height
+    14 → capped correctly, 13 → fully uncapped. Fixed by changing
+    `.list-card`/`.detail-card` `max-height` from `100%` to `100vh`
+    (viewport-relative, same unit family as the children's own caps,
+    never collapses toward zero the same way) — re-verified capped
+    correctly down to a 10-row terminal.
+  - Also hit the **`height: 1fr` sibling-starvation case** this repo's own
+    CSS already warns about elsewhere (`settings.py:70-71` comment): giving
+    `patch_progress_screen`'s log card `height: 1fr` to "fill remaining
+    space" let the *first* card (status + buttons, `height: auto`) eat
+    nearly the whole `ContentContainer` on short terminals, starving the
+    log card to 0 rows. Fixed by keeping `.log-card` at `height: auto` and
+    giving `#log-viewer` itself a direct `height: 60vh` (not `auto` +
+    `max-height`, which only grows with content — an empty log starts at
+    its `min-height` floor and never fills available space) so the log
+    viewer always occupies a viewport-relative slice regardless of content.
+  - `tests/test_layout_reach.py::test_theme_list_fits_viewport` pinned the
+    old "`.list-card` never needs scrolling" invariant from before this
+    change; that invariant is now intentionally relaxed (lists can need
+    scrolling to reach content below them, by design, once they grow
+    toward the 60vh cap), so the test was deleted — superseded by
+    `tests/test_base_screen.py::test_list_auto_adjusts_to_viewport`, which
+    pins the new cap directly (`FilePickerScreen` at 80×24 → list height
+    14; resized to 80×10 → list height 6).
+  - New `tests/test_base_screen.py`: `test_every_screen_uses_base_window`
+    (every `App.SCREENS` entry except `boot_screen`, plus
+    `FilePickerScreen`, subclasses `BaseScreen`) and
+    `test_list_auto_adjusts_to_viewport` (pinned resize numbers above).
+  - Verified: full programmatic walk of every registered screen at 80×24
+    and 80×12 (`CyberHeader` + `ContentContainer` + `Footer` all present,
+    no crashes); `patch_progress_screen`'s log viewer measured at 26/10/3
+    content rows for 50/24/12-row terminals. **Not yet verified live on a
+    physical device** — this is Textual layout/CSS only, no rish/install
+    changes, so the AGENTS.md device-verification requirement doesn't
+    apply, but a real-device keyboard-show/hide check is still recommended
+    before trusting pixel-perfect behavior outside the test harness. Full
+    suite: 138/138 passing.
 
