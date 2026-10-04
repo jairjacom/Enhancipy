@@ -8,6 +8,23 @@ rish() {
     return "${PIPESTATUS[0]}"
 }
 
+shquote() {
+    # POSIX-safe single-quote wrapper. `rish -c "<string>"` doesn't just run
+    # <string> in this script's own shell -- it hands the whole string to
+    # the `rish`/Shizuku binary, which re-parses it as a brand-new command
+    # line on the device side (unknown shell). An unquoted $VAR containing
+    # spaces or non-ASCII characters (app names/exported filenames routinely
+    # do, e.g. "Niagara Launcher \xe2\x80\xa7 Home Screen-1.16.28-hoo-dles.apk")
+    # silently splits into multiple argv words at that second parse, so e.g.
+    # `mv -f $EXPORTED_APP_PATH $PATCHED_APP_PATH` fails with no useful
+    # error beyond "mv: missing destination" / a half-moved file -- which
+    # surfaced as "Failed to stage APK for installation (move to
+    # /data/local/tmp failed)". Escaping embedded single quotes keeps this
+    # portable to whatever shell rish's backend actually runs (not just
+    # bash, so no bash-specific `${var@Q}`/`printf %q`).
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
 [ -z "$RISH_APPLICATION_ID" ] && export RISH_APPLICATION_ID="com.termux"
 [ -z "$MANAGER_APPLICATION_ID" ] && export MANAGER_APPLICATION_ID="moe.shizuku.privileged.api"
 
@@ -63,6 +80,8 @@ fi
 
 PATCHED_APP_PATH="/data/local/tmp/enhancify/$PKG_NAME.apk"
 EXPORTED_APP_PATH="/storage/emulated/$CURRENT_USER/Enhancify/Patched/$EXPORTED_APK_NAME.apk"
+PATCHED_APP_PATH_Q=$(shquote "$PATCHED_APP_PATH")
+EXPORTED_APP_PATH_Q=$(shquote "$EXPORTED_APP_PATH")
 
 if [ -n "$INSTALL_TYPE_OVERRIDE" ]; then
     INSTALL_TYPE="$INSTALL_TYPE_OVERRIDE"
@@ -94,7 +113,7 @@ if echo "$(rish -c "[ -e $PATCHED_APP_PATH ] && echo Exists || echo Missing")" |
 fi
 
 log "Moving exported APK to /data/local/tmp/enhancify..."
-rish -c "mv -f $EXPORTED_APP_PATH $PATCHED_APP_PATH"
+rish -c "mv -f $EXPORTED_APP_PATH_Q $PATCHED_APP_PATH_Q"
 
 if echo "$(rish -c "[ -e $PATCHED_APP_PATH ] && echo Exists || echo Missing")" | grep -qx "Missing"; then
     log "Failed to move patched APK to $PATCHED_APP_PATH"
@@ -183,6 +202,6 @@ else
     [ -n "$STORAGE" ] && echo "$FAILURE_CODE" > "$STORAGE/install_failure_code.txt"
 
     log "Moving APK back to original location."
-    rish -c "mv -f $PATCHED_APP_PATH $EXPORTED_APP_PATH"
+    rish -c "mv -f $PATCHED_APP_PATH_Q $EXPORTED_APP_PATH_Q"
     exit 1
 fi

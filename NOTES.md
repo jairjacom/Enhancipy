@@ -426,6 +426,43 @@ grepped for any prior working-dir name — none found).
     prove) against a throwaway fixture APK, and keystore-caching.
     Confirmed failing pre-fix via `git stash`. Full suite: 145/145
     passing.
+- Fixed (this session): Rish-mode installs of any app whose exported
+  filename contains a space (any app with a space in its display name —
+  the overwhelming majority, e.g. "Niagara Launcher ‧ Home Screen",
+  "YouTube Music") failed every time with "Failed to stage APK for
+  installation (move to /data/local/tmp failed)" right after a successful
+  patch, reported live via `install_error.txt`/`rish_log.txt` from this
+  device immediately after the Spoof-Signature fix above let a bundle-app
+  patch succeed for the first time.
+  - Root cause: `system/rish-install.sh` interpolated
+    `$EXPORTED_APP_PATH`/`$PATCHED_APP_PATH` **unquoted** into the string
+    handed to `rish -c "..."` (lines that move the exported APK into
+    `/data/local/tmp/enhancify` before `pm install`, and move it back on
+    failure). `rish -c "<string>"` doesn't run `<string>` in this script's
+    own shell — it hands the whole string to the `rish`/Shizuku backend,
+    which re-parses it as a brand-new command line on the device side. An
+    unquoted path containing a space silently splits into multiple `mv`
+    argv words at that second parse, so `mv` either errors or silently
+    fails to produce the destination file, and the script's own
+    `[ -e $PATCHED_APP_PATH ]` existence check correctly detects the
+    failure and surfaces it as the generic staging-error message.
+  - Fix: new `shquote()` helper (POSIX single-quote escaping, not
+    bash-specific `${var@Q}`/`printf %q`, since rish's backend shell is
+    unknown) wraps both paths once after they're built;
+    `$EXPORTED_APP_PATH_Q`/`$PATCHED_APP_PATH_Q` replace the unquoted
+    variables at both `mv -f` call sites (stage-for-install and
+    revert-on-failure). Every other `$PATCHED_APP_PATH` usage was left
+    unquoted/unchanged — it's always `/data/local/tmp/enhancify/$PKG_NAME.apk`
+    and Android package names can't contain spaces, so those sites were
+    never actually vulnerable.
+  - New `tests/test_rish_script.py::test_mv_quoting_survives_names_with_spaces_and_unicode`
+    exercises the real shell script (not a Python re-implementation) via
+    an `exported_name` param newly threaded through the existing stub-rish
+    harness; the stub's `mv -f` case re-parses the received command string
+    exactly like the real backend does (`eval "set -- $CMD"`) and reports
+    the resulting word count. Confirmed the exact failure mode pre-fix via
+    `git stash`: 8 words (path split apart) instead of the correct 4
+    (`mv`, `-f`, source, dest). Full suite: 146/146 passing.
 - Candidates for next session (not yet started), in priority order:
   1. **`CyberHeader` badge colors are dead code** — `mode_color`/
      `net_color` (`src/tui/widgets/header.py:64,68`) are computed from
