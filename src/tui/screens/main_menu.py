@@ -28,8 +28,6 @@ class MainMenuScreen(BaseScreen):
     SHOW_STATUS_BAR = True
 
     def compose_content(self) -> ComposeResult:
-        has_root = self.priv[0]
-
         with Vertical(classes="card"):
             yield Label("🔥 Quick Actions", classes="card-title")
             yield Label("Select an action below or use keyboard shortcuts:", classes="card-desc")
@@ -44,10 +42,14 @@ class MainMenuScreen(BaseScreen):
                 yield Button("🗑️ Storage Manager [D]", id="btn-storage")
                 yield Button("📋 Specs & Changelog [I]", id="btn-specs")
 
-                if has_root:
-                    yield Button("🔒 Unmount Patched App", id="btn-unmount", classes="btn-danger")
+                unmount = Button("🔒 Unmount Patched App", id="btn-unmount", classes="btn-danger")
+                unmount.display = self.priv[0]
+                yield unmount
 
                 yield Button("🚪 Exit EnhanciPy [Q]", id="btn-exit", classes="btn-danger")
+
+    def privileges_resolved(self, priv) -> None:
+        self.query_one("#btn-unmount", Button).display = priv[0]
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id

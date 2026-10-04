@@ -9,6 +9,7 @@ import re
 import shutil
 import socket
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +54,9 @@ class Environment:
         self._cached_specs: Optional[DeviceSpecs] = None
         self._cached_network: Optional[Tuple[bool, bool, str, float]] = None
         self._cached_privileges: Optional[Tuple[bool, bool, str]] = None
+        self._cached_arch: Optional[str] = None
+        self._privileges_lock = threading.Lock()
+        self._network_lock = threading.Lock()
 
     @property
     def is_termux(self) -> bool:
@@ -73,7 +77,9 @@ class Environment:
             return default
 
     def get_arch(self) -> str:
-        """Get CPU ABI architecture."""
+        """Get CPU ABI architecture. Cached: the ABI cannot change at runtime."""
+        if self._cached_arch is not None:
+            return self._cached_arch
         arch = self.getprop("ro.product.cpu.abi")
         if not arch:
             try:
@@ -90,6 +96,7 @@ class Environment:
                     arch = u
             except Exception:
                 arch = "arm64-v8a"
+        self._cached_arch = arch
         return arch
 
     def get_dpi(self) -> str:
@@ -126,75 +133,89 @@ class Environment:
         Results are cached after the first probe. Pass refresh=True to bypass
         the cache and re-probe live (rish/Shizuku may not be attached yet on
         the very first app-boot probe, so callers making an install decision
-        must not trust a stale negative result).
+        must not trust a stale negative result). Concurrent callers block on
+        a lock and share one probe instead of racing su/rish independently.
         """
         if force_root is True:
             return True, False, "Root Mode"
         if force_rish is True:
             return False, True, "Rish Mode"
 
-        if self._cached_privileges is not None and not refresh:
-            return self._cached_privileges
+        with self._privileges_lock:
+            if self._cached_privileges is not None and not refresh:
+                return self._cached_privileges
 
-        # Check Root access
-        has_root = False
-        try:
-            res = subprocess.run(["su", "-c", "exit"], capture_output=True, timeout=5)
-            if res.returncode == 0:
-                has_root = True
-        except Exception:
+            # Check Root access
             has_root = False
+            try:
+                res = subprocess.run(["su", "-c", "exit"], capture_output=True, timeout=5)
+                if res.returncode == 0:
+                    has_root = True
+            except Exception:
+                has_root = False
 
-        if has_root:
-            self._cached_privileges = (True, False, "Root Mode")
+            if has_root:
+                self._cached_privileges = (True, False, "Root Mode")
+                return self._cached_privileges
+
+            # Check Rish access
+            has_rish = rish_available()
+
+            if has_rish:
+                self._cached_privileges = (False, True, "Rish Mode")
+                return self._cached_privileges
+
+            self._cached_privileges = (False, False, "Non-privilege Mode")
             return self._cached_privileges
-
-        # Check Rish access
-        has_rish = rish_available()
-
-        if has_rish:
-            self._cached_privileges = (False, True, "Rish Mode")
-            return self._cached_privileges
-
-        self._cached_privileges = (False, False, "Non-privilege Mode")
-        return self._cached_privileges
 
     def check_network(self, force_refresh: bool = False) -> Tuple[bool, bool, str]:
         """
         Fast socket connectivity check to GitHub and APKMirror with caching.
         Returns: (github_ok, apkmirror_ok, status_text)
         """
-        now = time.time()
-        if not force_refresh and self._cached_network is not None:
-            gh, apk, stat, ts = self._cached_network
-            if now - ts < 30.0:  # 30 second cache
-                return gh, apk, stat
+        with self._network_lock:
+            now = time.time()
+            if not force_refresh and self._cached_network is not None:
+                gh, apk, stat, ts = self._cached_network
+                if now - ts < 30.0:  # 30 second cache
+                    return gh, apk, stat
 
-        github_ok = False
-        apkmirror_ok = False
+            github_ok = False
+            apkmirror_ok = False
 
-        def _test_host(host: str, port: int = 443, timeout: float = 0.8) -> bool:
-            try:
-                s = socket.create_connection((host, port), timeout=timeout)
-                s.close()
-                return True
-            except Exception:
-                return False
+            def _test_host(host: str, port: int = 443, timeout: float = 0.8) -> bool:
+                try:
+                    s = socket.create_connection((host, port), timeout=timeout)
+                    s.close()
+                    return True
+                except Exception:
+                    return False
 
-        github_ok = _test_host("api.github.com")
-        apkmirror_ok = _test_host("www.apkmirror.com")
+            github_ok = _test_host("api.github.com")
+            apkmirror_ok = _test_host("www.apkmirror.com")
 
-        if github_ok and apkmirror_ok:
-            status = "Online"
-        elif github_ok and not apkmirror_ok:
-            status = "Partial (Apkmirror Down)"
-        elif not github_ok and apkmirror_ok:
-            status = "Partial (Github Down)"
-        else:
-            status = "Offline"
+            if github_ok and apkmirror_ok:
+                status = "Online"
+            elif github_ok and not apkmirror_ok:
+                status = "Partial (Apkmirror Down)"
+            elif not github_ok and apkmirror_ok:
+                status = "Partial (Github Down)"
+            else:
+                status = "Offline"
 
-        self._cached_network = (github_ok, apkmirror_ok, status, now)
-        return github_ok, apkmirror_ok, status
+            self._cached_network = (github_ok, apkmirror_ok, status, now)
+            return github_ok, apkmirror_ok, status
+
+    def last_privileges(self) -> Optional[Tuple[bool, bool, str]]:
+        """Most recent check_privileges() result, without probing.
+        None until the first probe has completed."""
+        return self._cached_privileges
+
+    def last_network_status(self) -> Optional[str]:
+        """Most recent check_network() status text, ignoring the 30s TTL,
+        without probing. None until the first probe has completed."""
+        cached = self._cached_network
+        return cached[2] if cached is not None else None
 
     def get_memory_info(self) -> Tuple[int, int, str]:
         """

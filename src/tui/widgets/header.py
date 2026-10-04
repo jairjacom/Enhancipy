@@ -49,7 +49,6 @@ class CyberHeader(Widget):
 
             source_name = config.get("SOURCE", "Anddea")
             arch = env.get_arch()
-            java_ver, _ = env.detect_java_version()
 
             # Badge Labels are narrow — keep them on one line at least down
             # to phone widths (the default 78-col threshold would stack all

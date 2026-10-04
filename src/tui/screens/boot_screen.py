@@ -171,6 +171,10 @@ class BootScreen(Screen):
         # then — on first run, when online — the bin/aapt2 + APKEditor.jar
         # runtime dependency download.
         threading.Thread(target=self._fetch_boot_info, daemon=True).start()
+        # Warm the privilege cache behind the splash so the main menu's badges are
+        # usually resolved on arrival (su + rish probe takes ~1-13s). Separate
+        # thread: must not delay the dependency bootstrap in _fetch_boot_info.
+        threading.Thread(target=env.check_privileges, daemon=True).start()
 
     def _tick(self) -> None:
         if self._deps_active:
