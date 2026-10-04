@@ -1,5 +1,24 @@
 # EnhanciPy Changelog
 
+## [v1.3.5] — screens open instantly now
+
+### Fixed
+
+- **Opening any screen no longer freezes the app.** EnhanciPy used to
+  pause for up to a couple of seconds on every screen you opened while
+  it re-checked root/Rish access and your network connection. Those
+  checks now run in the background — the screen opens immediately with
+  the last known status and updates it moments later.
+- **The main menu's "Unmount Patched App" button now shows up reliably**
+  once root access is confirmed, instead of only appearing if it was
+  detected before the menu first drew.
+- Removed a hidden background process the header was launching on every
+  screen open for no visible benefit, shaving more time off each
+  transition.
+- Pressing **Install** now shows the "Installing APK" progress screen
+  immediately instead of freezing first while it double-checks
+  privileges.
+
 ## [v1.3.4] — uniform windows that adapt to the keyboard
 
 ### Added
