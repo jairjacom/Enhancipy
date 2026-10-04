@@ -55,6 +55,7 @@ class Environment:
         self._cached_network: Optional[Tuple[bool, bool, str, float]] = None
         self._cached_privileges: Optional[Tuple[bool, bool, str]] = None
         self._cached_arch: Optional[str] = None
+        self._cached_java: Optional[Tuple[str, str]] = None
         self._privileges_lock = threading.Lock()
         self._network_lock = threading.Lock()
 
@@ -268,13 +269,20 @@ class Environment:
         except Exception:
             return "Unknown"
 
-    def detect_java_version(self) -> Tuple[str, str]:
+    def detect_java_version(self, refresh: bool = False) -> Tuple[str, str]:
         """
         Detect Java runtime version.
         Returns (version_str, package_name) e.g. ("21", "openjdk-21").
+        Cached for the process lifetime; pass refresh=True to re-probe
+        (e.g. the user ran `pkg install openjdk-21` while EnhanciPy is running).
         """
+        if self._cached_java is not None and not refresh:
+            return self._cached_java
+
         if not shutil.which("java"):
-            return "none", "none"
+            result = "none", "none"
+            self._cached_java = result
+            return result
 
         try:
             res = subprocess.run(
@@ -287,18 +295,22 @@ class Environment:
             first_line = output.splitlines()[0] if output else ""
 
             if re.search(r'["\s]25[\.\s"]|openjdk 25', first_line):
-                return "25", "openjdk-25"
+                result = "25", "openjdk-25"
             elif re.search(r'["\s]21[\.\s"]|openjdk 21', first_line):
-                return "21", "openjdk-21"
+                result = "21", "openjdk-21"
             elif re.search(r'["\s]17[\.\s"]|openjdk 17', first_line):
-                return "17", "openjdk-17"
+                result = "17", "openjdk-17"
             else:
                 digits = re.findall(r"\d+", first_line)
                 if digits and digits[0] in ("25", "21", "17"):
-                    return digits[0], f"openjdk-{digits[0]}"
-                return "other", "openjdk-17"
+                    result = digits[0], f"openjdk-{digits[0]}"
+                else:
+                    result = "other", "openjdk-17"
         except Exception:
-            return "none", "none"
+            result = "none", "none"
+
+        self._cached_java = result
+        return result
 
     def get_device_specs(self) -> DeviceSpecs:
         """Fetch all specs for display in the Specs screen."""

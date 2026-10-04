@@ -26,7 +26,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.config import ConfigManager
-from src.installer import AppInstaller, CONFLICT_VERSION_DOWNGRADE
+from src.installer import AppInstaller, CONFLICT_SIGNATURE_MISMATCH, CONFLICT_VERSION_DOWNGRADE
 
 
 class TestInstallModeRouting(unittest.TestCase):
@@ -179,13 +179,41 @@ class TestInstallModeRouting(unittest.TestCase):
         self.assertIn("312270001", res.message)
         self.assertIn("312271001", res.message)
 
+    def test_rish_signature_mismatch_failure_surfaces_conflict(self):
+        """INSTALL_FAILED_UPDATE_INCOMPATIBLE (installed app signed with a
+        different cert, e.g. stock Play Store vs. EnhanciPy's keystore)
+        must map to CONFLICT_SIGNATURE_MISMATCH, not fall through to a
+        dead-end generic error -- previously only the downgrade code was
+        recognized."""
+        storage = self.workspace / "storage"
+        storage.mkdir(parents=True, exist_ok=True)
+
+        def fake_run_command(cmd, **kwargs):
+            (storage / "install_error.txt").write_text(
+                "INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package "
+                "com.test.app signatures do not match newer version; ignoring!"
+            )
+            (storage / "install_failure_code.txt").write_text("INSTALL_FAILED_UPDATE_INCOMPATIBLE")
+            return (1, "", "")
+
+        with patch("src.installer.run_command", side_effect=fake_run_command):
+            res = self.installer.install_or_export(
+                self.apk_path, "TestApp", "com.test.app", "1.0", "TestSrc",
+                has_root=False, has_rish=True,
+            )
+
+        self.assertFalse(res.ok)
+        self.assertEqual(res.conflict, CONFLICT_SIGNATURE_MISMATCH)
+        self.assertEqual(res.exported_name, "TestApp-1.0-TestSrc")
+        self.assertIn("signatures do not match", res.message)
+
     def test_non_downgrade_failure_has_no_conflict(self):
         storage = self.workspace / "storage"
         storage.mkdir(parents=True, exist_ok=True)
 
         def fake_run_command(cmd, **kwargs):
-            (storage / "install_error.txt").write_text("Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]")
-            (storage / "install_failure_code.txt").write_text("INSTALL_FAILED_UPDATE_INCOMPATIBLE")
+            (storage / "install_error.txt").write_text("Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE]")
+            (storage / "install_failure_code.txt").write_text("INSTALL_FAILED_INSUFFICIENT_STORAGE")
             return (1, "", "")
 
         with patch("src.installer.run_command", side_effect=fake_run_command):

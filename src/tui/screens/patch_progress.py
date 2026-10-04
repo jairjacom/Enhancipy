@@ -17,7 +17,7 @@ from textual.widgets import Button, Label, ProgressBar, RichLog
 from src.assets import assets_mgr
 from src.config import config
 from src.environment import env
-from src.installer import CONFLICT_VERSION_DOWNGRADE, InstallResult, app_installer, rish_export_name
+from src.installer import CONFLICT_SIGNATURE_MISMATCH, CONFLICT_VERSION_DOWNGRADE, InstallResult, app_installer, rish_export_name
 from src.patcher import PatchExecutionConfig, patcher_engine
 from src.theme import palette
 from src.tui.screens.base import BaseScreen
@@ -244,6 +244,8 @@ class PatchProgressScreen(BaseScreen):
                 )
             elif res.conflict == CONFLICT_VERSION_DOWNGRADE:
                 self.app.call_from_thread(self._prompt_downgrade, res)
+            elif res.conflict == CONFLICT_SIGNATURE_MISMATCH:
+                self.app.call_from_thread(self._prompt_signature_mismatch, res)
             else:
                 self.app.call_from_thread(
                     self.app.push_screen,
@@ -287,10 +289,49 @@ class PatchProgressScreen(BaseScreen):
                 yes_class="btn-success",
                 no_class="btn-danger",
             ),
-            self._on_downgrade_confirm,
+            self._on_conflict_confirm,
         )
 
-    def _on_downgrade_confirm(self, confirmed: Optional[bool]) -> None:
+    def _prompt_signature_mismatch(self, res: InstallResult) -> None:
+        """Offer to uninstall the currently installed app and reinstall the
+        patched APK after rish reported INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+        Common case: the device has the stock (e.g. Play Store) build
+        installed, signed with its real developer certificate, and the
+        patched build is signed with a different one (EnhanciPy's own
+        auto-managed keystore, or a configured custom keystore) -- pm
+        correctly refuses to treat that as an in-place update regardless
+        of version/downgrade settings, since the two signatures can never
+        match."""
+        app_name = self._install_ctx.get("app_name", "the app")
+        exported_name = res.exported_name or rish_export_name(
+            app_name,
+            self._install_ctx.get("app_ver", "1.0"),
+            self._install_ctx.get("source_name", ""),
+        )
+        self._install_ctx["exported_name"] = exported_name
+
+        message = (
+            f"{res.message}\n\n"
+            f"The installed {app_name} is signed with a different certificate "
+            "than this patched build (often the original, unpatched version). "
+            f"Uninstall the currently installed {app_name} and install the "
+            "patched version?\n\n"
+            "WARNING: uninstalling deletes that app's data (logins, settings)."
+        )
+
+        self.app.push_screen(
+            ConfirmDialog(
+                "Signature Mismatch Detected",
+                message,
+                yes_label="Yes, Uninstall & Install",
+                no_label="No, Cancel",
+                yes_class="btn-success",
+                no_class="btn-danger",
+            ),
+            self._on_conflict_confirm,
+        )
+
+    def _on_conflict_confirm(self, confirmed: Optional[bool]) -> None:
         if not confirmed:
             self.app.push_screen(
                 MessageDialog(

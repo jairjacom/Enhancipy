@@ -335,33 +335,256 @@ grepped for any prior working-dir name — none found).
     re-probe on a real patched APK** — that needs an actual patch run
     plus a Rish install, which the user should confirm themselves
     before this merges. Full suite: 141/141 passing.
+- Fixed (this session): `SpecsScreen` froze on every open (candidate #1
+  above), and a real race surfaced an empty "Asset load failed: " error
+  after a patches download, wiping `apps_data` (misdiagnosed in candidate
+  #3 above as device-thermal flakiness — it was reproducible 4/6 isolated
+  runs on an idle device).
+  - Freeze root cause: `SpecsScreen.compose_content` (`specs.py:61`) called
+    `env.detect_java_version()` uncached on every open (~0.4-0.6s `java
+    -version` spawn on the UI thread, same class of bug just fixed in
+    `CyberHeader`). Fix: `detect_java_version(refresh: bool = False)` now
+    memoizes like `get_arch()`; `run_patch` (`src/patcher.py`) passes
+    `refresh=True` so a mid-session JDK upgrade is still gated correctly;
+    `BootScreen.on_mount` gained a pre-warm thread so the cache is usually
+    already warm by the first Specs open.
+  - Race root cause: `AppSelectScreen.run_parse_worker`
+    (`app_select.py:284`) dismisses `parse_modal`, then line 335 called
+    `parse_modal.update_message(...)` on the now-detached modal from a
+    worker thread. `_ui_call` (`dialogs.py:25`)'s `getattr(screen, "app",
+    None)` doesn't catch `RuntimeError` — Textual's `MessagePump.app`
+    raises `NoActiveAppError` (a `RuntimeError` subclass) instead of
+    returning `None` on a detached screen with no `active_app` contextvar.
+    The exception landed in `run_parse_worker`'s `except`, surfacing
+    `MessageDialog("Error", "Asset load failed: ")` with an empty reason
+    and never setting `apps_data`. Fix: `_ui_call` now does
+    `try: app = screen.app / except RuntimeError: return` instead of
+    `getattr(..., None)`; the dead post-dismiss `update_message` call at
+    `app_select.py:335` was deleted (unreachable — the modal is always
+    dismissed one line before `_resolve_apkmirror_names` is invoked).
+  - Verified live on this device: 10/10 runs of the formerly-flaky test
+    passed (~2.4s each, vs. the pre-fix 4/6-failing baseline at ~18.7s);
+    stashing the `dialogs.py` fix reproduces the exact
+    `NoActiveAppError` the new regression test
+    (`tests/test_download_ui.py::TestUiCallDetached`) pins. Programmatic
+    `run_test()` smoke confirmed zero `java -version` subprocess calls on
+    either of two consecutive Specs pushes (one from boot pre-warm only),
+    and the Specs label correctly reads `Java Runtime : OpenJDK 25`. The
+    min-JDK gate's `refresh=True` was confirmed live: a stale cached "17"
+    correctly rejects a MorpheApp run with
+    `"requires OpenJDK 21+ ... found OpenJDK 17"`, then re-probing to a
+    real "21" (same process, same stale cache) passes the gate on the next
+    call. Full suite: 143/143 passing.
+- Fixed (this session): any patch depending on the Spoof Signature patch
+  family (used for license/paywall-bypass patches, e.g. hoo-dles' "Enable
+  Niagara Pro") crashed with a raw `app.morphe.util.NoCertificateException:
+  Unable to extract certificate from apk` on **every** bundle-distributed
+  app (APKM/APKS/XAPK from APKMirror) and on **every** multi-ABI app with
+  `OPTIMIZE_LIBS` on (the default) — not an APKMirror or patch-source
+  issue, confirmed by diffing a real captured `patch_log.txt` (Niagara
+  Launcher, source hoo-dles) against its raw pre-merge `base.apk` split.
+  - Root cause: `src/antisplit.py`'s `antisplit_apkm`/`antisplit_apks`/
+    `antisplit_xapk` merge split APKs via `APKEditor.jar m`, which can't
+    carry a per-split v2/v3 signature over to merged content and produces
+    a completely certificate-less APK (verified byte-for-byte: raw
+    `base.apk` has an `APK Sig Block 42` magic + `META-INF/CERT.*`; the
+    merged output has neither). `optimize_native_libs` independently
+    destroys signatures too — it explicitly deletes
+    `META-INF/*.SF/.RSA/.DSA/.EC` and rewrites the zip from scratch via
+    `zipfile.ZipFile`, which can't preserve the APK Signing Block either —
+    and runs by default on every multi-ABI single-APK download, since
+    `OPTIMIZE_LIBS` defaults `"on"` (`src/config.py:21`). The patch CLI's
+    cert extraction reads straight from the input APK's raw bytes during
+    patching, independent of any `--keystore`/`--unsigned` *output*-signing
+    flag, and there is no `--original-apk`/signer-source override
+    (`patch --help` only has output-signing flags) — so this crashed
+    deterministically whenever the input had nothing to extract.
+  - Fix: both code paths now call a new `AntiSplitManager._sign_for_patching`
+    right after producing their output, which generates an internal
+    throwaway PKCS12 keystore (`<storage>/antisplit.keystore`, via
+    `keytool`, lazy + cached) and re-signs with the vendored
+    `utils/apksigner.jar` (v1+v2+v3, `--min-sdk-version=1` to avoid relying
+    on binary-manifest parsing). This is correct, not just
+    crash-avoidance: the Spoof Signature patch family extracts *whatever*
+    certificate is present at patch time and patches the app's own
+    signature-check call sites to always report that embedded value — it
+    doesn't matter which key/cert was used, only that one exists. Both
+    operations are best-effort (signing failure leaves the pre-existing
+    unsigned-output behavior unchanged, never blocks the merge/strip
+    result).
+  - Verified end-to-end on this device with the real captured failure:
+    copied the exact Niagara Launcher merged output that had produced
+    `NoCertificateException`, confirmed it had zero signing material,
+    signed it with the new helper (confirmed `APK Sig Block 42` +
+    `META-INF/MANIFEST.MF` now present), then re-ran the *exact* failing
+    CLI command from the captured log against the signed file — it now
+    logs `INFO: Applied: Enable Niagara Pro` and writes a complete patched
+    output, no exception. New `tests/test_antisplit_signing.py`
+    (`TestSignForPatching`, 2 tests) exercises the real vendored
+    `apksigner.jar`/`keytool` (not mocked — the contract is "produces an
+    actually extractable certificate," which a mocked subprocess can't
+    prove) against a throwaway fixture APK, and keystore-caching.
+    Confirmed failing pre-fix via `git stash`. Full suite: 145/145
+    passing.
+- Fixed (this session): Rish-mode installs of any app whose exported
+  filename contains a space (any app with a space in its display name —
+  the overwhelming majority, e.g. "Niagara Launcher ‧ Home Screen",
+  "YouTube Music") failed every time with "Failed to stage APK for
+  installation (move to /data/local/tmp failed)" right after a successful
+  patch, reported live via `install_error.txt`/`rish_log.txt` from this
+  device immediately after the Spoof-Signature fix above let a bundle-app
+  patch succeed for the first time.
+  - Root cause: `system/rish-install.sh` interpolated
+    `$EXPORTED_APP_PATH`/`$PATCHED_APP_PATH` **unquoted** into the string
+    handed to `rish -c "..."` (lines that move the exported APK into
+    `/data/local/tmp/enhancify` before `pm install`, and move it back on
+    failure). `rish -c "<string>"` doesn't run `<string>` in this script's
+    own shell — it hands the whole string to the `rish`/Shizuku backend,
+    which re-parses it as a brand-new command line on the device side. An
+    unquoted path containing a space silently splits into multiple `mv`
+    argv words at that second parse, so `mv` either errors or silently
+    fails to produce the destination file, and the script's own
+    `[ -e $PATCHED_APP_PATH ]` existence check correctly detects the
+    failure and surfaces it as the generic staging-error message.
+  - Fix: new `shquote()` helper (POSIX single-quote escaping, not
+    bash-specific `${var@Q}`/`printf %q`, since rish's backend shell is
+    unknown) wraps both paths once after they're built;
+    `$EXPORTED_APP_PATH_Q`/`$PATCHED_APP_PATH_Q` replace the unquoted
+    variables at both `mv -f` call sites (stage-for-install and
+    revert-on-failure). Every other `$PATCHED_APP_PATH` usage was left
+    unquoted/unchanged — it's always `/data/local/tmp/enhancify/$PKG_NAME.apk`
+    and Android package names can't contain spaces, so those sites were
+    never actually vulnerable.
+  - New `tests/test_rish_script.py::test_mv_quoting_survives_names_with_spaces_and_unicode`
+    exercises the real shell script (not a Python re-implementation) via
+    an `exported_name` param newly threaded through the existing stub-rish
+    harness; the stub's `mv -f` case re-parses the received command string
+    exactly like the real backend does (`eval "set -- $CMD"`) and reports
+    the resulting word count. Confirmed the exact failure mode pre-fix via
+    `git stash`: 8 words (path split apart) instead of the correct 4
+    (`mv`, `-f`, source, dest). Full suite: 146/146 passing.
+- Fixed (this session): the first successful bundle-app Rish install
+  (Niagara Launcher, right after the Spoof-Signature fix above let it
+  patch successfully for the first time) failed with `pm install`'s
+  `INSTALL_FAILED_INVALID_APK: Failed to extract native libraries,
+  res=-2`, reported live via `rish_log.txt`/`install_error.txt` from this
+  device — a 5th, pre-existing bug in the same merge/optimize pipeline,
+  exposed only because patching finally reached the install step for the
+  first time this session.
+  - Root cause: `android:extractNativeLibs=false` was set in the
+    manifest, but the native `lib/*.so` entries were DEFLATE-compressed —
+    an invalid combination (confirmed via `aapt2 dump xmltree` +
+    `zipfile` inspection of the real merged APK). `false` means "mmap the
+    libs directly from the APK, don't extract", which requires them
+    stored uncompressed; `pm install`'s native-lib-extraction stage
+    rejects the contradiction before ever reaching signature
+    verification. `AntiSplitManager.antisplit_apkm/apks/xapk`
+    (`src/antisplit.py`) run `APKEditor.jar m` with its default
+    `-extractNativeLibs manifest` (auto-detect) mode, which produced the
+    wrong result for this app's bundle (verified correct on a cached
+    YouTube bundle, wrong on Niagara's — a third-party APKEditor
+    behavior, not reproducible top-down, so not fully root-caused inside
+    APKEditor itself). `optimize_native_libs`'s own zip-rebuild (the
+    *default* single-APK path — `OPTIMIZE_LIBS` is on by default for any
+    multi-ABI app, not just bundles) has the exact same defect
+    independently: it force-compresses every file except `.arsc`,
+    without regard for the original `extractNativeLibs` value — a latent
+    landmine for any default-config multi-ABI app, found by inspection
+    while fixing the bundle case (not yet reproduced as a user-facing
+    failure, but mechanism-identical and confirmed via a synthetic
+    fixture).
+  - Fix: both `APKEditor.jar m` invocations now pass
+    `-extractNativeLibs false` explicitly (APKEditor's own documented
+    override: "set manifest attribute 'false' and store libraries
+    un-compressed with 4096 alignment" — removes the ambiguity entirely,
+    and uncompressed is valid Android-side regardless of what the
+    original manifest declared). `optimize_native_libs`'s repackage now
+    stores `lib/*.so` uncompressed too, matching `.arsc`.
+  - Byte alignment of the now-uncompressed libs is intentionally **not**
+    re-aligned locally: tried it (`zipalign -P 16 4` before
+    `_sign_for_patching`) and found apksigner's v1 JAR signing reflows
+    zip entry offsets regardless (27 of 37 libs ended up misaligned again
+    after signing); tried aligning *after* signing instead and found the
+    vendored `utils/zipalign` binary strips the APK Signing Block
+    entirely when re-aligning an already-v2/v3-signed APK (not
+    signing-block-aware). Resolved by relying on the downstream patch
+    CLI's own "Aligning APK" pass instead, which is always in the
+    pipeline (every antisplit/optimize output goes through `run_patch`
+    before install, no shortcut path skips it) and was verified via a
+    real end-to-end run to produce 0 misaligned libs regardless of the
+    input's alignment state. The dead `_zipalign` helper was removed
+    rather than left in as inert/misleading code.
+  - Verified end-to-end on this device: re-ran the real
+    `antisplit_apkm` → real CLI `patch` pipeline against a cached YouTube
+    bundle. Final output: all 37 libs `compress_type=0` (stored), 0
+    misaligned (`zipalign -c -P 16 4`), manifest `extractNativeLibs=false`
+    consistent with storage, cert present pre-patch (confirms the Spoof
+    Signature fix above still holds). New
+    `tests/test_antisplit_signing.py::TestMergeForcesExtractNativeLibsFalse`
+    (3 tests, pins the flag is actually passed to APKEditor for all three
+    merge methods) and `::TestOptimizeNativeLibsStoresUncompressed` (pins
+    native libs survive as stored/uncompressed). Confirmed all 4 fail
+    pre-fix via `git stash`. Full suite: 150/150 passing.
+- Fixed (this session): after the native-lib fix above, Niagara Launcher
+  patched and the merge/lib pipeline was clean, but Rish install hit a
+  6th, unrelated failure: `pm install` returned
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package bitpit.launcher
+  signatures do not match newer version; ignoring!` — and the TUI showed
+  a dead-end generic error dialog instead of the uninstall+reinstall
+  conflict prompt the user expected (it exists for the downgrade case,
+  reported live via `rish_log.txt`/`install_error.txt`).
+  - Not a bug in the signing/patch pipeline: this is standard Android
+    behavior — an app already installed from the Play Store carries
+    Google's/the developer's real signing certificate; any patched build
+    (EnhanciPy's auto-managed `revancify.keystore`, or a user's configured
+    custom keystore) is signed with a different one, and `pm install`
+    correctly refuses to treat a differently-signed APK as an in-place
+    update, regardless of `ALLOW_APP_VERSION_DOWNGRADE`/
+    `BYPASS_LOW_TARGET_SDK_BLOCK`. No flag bypasses this; the only
+    remedies are uninstall-then-install (loses app data) or installing
+    alongside under a renamed package.
+  - Real gap: `AppInstaller._rish_failure_result` (`src/installer.py`)
+    only recognized `INSTALL_FAILED_VERSION_DOWNGRADE` as a resolvable
+    conflict; `INSTALL_FAILED_UPDATE_INCOMPATIBLE` fell through to a
+    plain error dialog with no way to proceed short of manually
+    uninstalling outside the app. `uninstall_and_reinstall` was already
+    fully generic (doesn't care why it's being called), so this was a
+    missing-case gap, not a missing capability.
+  - Fix: new `CONFLICT_SIGNATURE_MISMATCH` constant alongside
+    `CONFLICT_VERSION_DOWNGRADE`; `_rish_failure_result` now maps
+    `INSTALL_FAILED_UPDATE_INCOMPATIBLE` to it.
+    `PatchProgressScreen` (`src/tui/screens/patch_progress.py`) gained
+    `_prompt_signature_mismatch` (same uninstall+reinstall
+    `ConfirmDialog`, wording explains *why* — different signing cert, not
+    a version issue) alongside the existing `_prompt_downgrade`; both now
+    share one `_on_conflict_confirm` callback (renamed from
+    `_on_downgrade_confirm`, which had no downgrade-specific logic in its
+    body — it just drives the already-generic
+    `uninstall_and_reinstall`).
+  - New `tests/test_installer.py::test_rish_signature_mismatch_failure_surfaces_conflict`
+    and `tests/test_downgrade_dialog.py::test_signature_mismatch_conflict_prompts_then_runs_uninstall_reinstall`
+    pin the mapping and the full conflict → dialog → retry wiring,
+    mirroring the existing downgrade tests. Updated
+    `test_installer.py::test_non_downgrade_failure_has_no_conflict`,
+    which had incidentally used `INSTALL_FAILED_UPDATE_INCOMPATIBLE` as
+    its example of an unhandled code — now genuinely unhandled
+    (`INSTALL_FAILED_INSUFFICIENT_STORAGE`), since the old example is
+    handled on purpose now. Confirmed both new tests fail pre-fix (hard
+    `ImportError` on the new constant, since nothing partially existed).
+    Full suite: 152/152 passing.
 - Candidates for next session (not yet started), in priority order:
-  1. **`SpecsScreen` still freezes on every open** — `src/tui/screens/specs.py:61`
-     calls `env.detect_java_version()` synchronously in `compose_content()`,
-     uncached, on every open (~0.4-0.6s). Same `java -version` UI-thread
-     spawn just removed from `CyberHeader`; `get_device_specs()` on the
-     line above is already cached, this isn't. Fix: memoize like
-     `get_arch()`, or move into the `BaseScreen` worker pattern.
-  2. **`CyberHeader` badge colors are dead code** — `mode_color`/
+  1. **`CyberHeader` badge colors are dead code** — `mode_color`/
      `net_color` (`src/tui/widgets/header.py:64,68`) are computed from
      real privilege/network state but never applied to the `Label`s;
      badges always render via static `badge-green`/`badge-cyan` CSS
      classes regardless of state. `CyberStatusBar` applies its computed
      color correctly. Either wire the header badges up the same way, or
      delete the dead computation — needs a decision first.
-  3. **Flaky `tests/test_new_features.py::TestChangelogBeforeDownload::
-     test_back_aborts_and_download_proceeds`** — a 600x0.02s=12s
-     busy-poll budget occasionally blows under sustained device
-     thermal/CPU load during a full-suite run (reproduced twice this
-     session, passed clean after a cooldown). Pre-existing, confirmed
-     not caused by the lazy-privilege-gate change (it runs earlier in
-     file-collection order, so no causal link). Worth a longer budget or
-     an event-based wait instead of fixed-iteration polling.
-  4. **Root-device Unmount-button path unverified live** — only a
+  2. **Root-device Unmount-button path unverified live** — only a
      non-root Rish device was available this session;
      `privileges_resolved()` -> `unmount.display = priv[0]` has mocked
      test coverage only. Needs a smoke pass on a rooted device.
-  5. **30s network-staleness tradeoff** — `check_network()`'s TTL means
+  3. **30s network-staleness tradeoff** — `check_network()`'s TTL means
      a screen opened right after a connectivity change can show a stale
      Online/Offline badge for up to 30s. By-design from this session,
      not a bug; worth a product call on whether polling is good enough

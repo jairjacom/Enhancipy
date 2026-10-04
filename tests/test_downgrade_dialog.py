@@ -24,7 +24,7 @@ os.environ.setdefault("ENHANCIFY_BOOT_SECONDS", "0.01")
 
 from textual.widgets import Button
 
-from src.installer import CONFLICT_VERSION_DOWNGRADE, InstallResult
+from src.installer import CONFLICT_SIGNATURE_MISMATCH, CONFLICT_VERSION_DOWNGRADE, InstallResult
 from src.theme import set_current_theme
 from src.tui.app import EnhancifyApp
 from src.tui.screens.patch_progress import PatchProgressScreen
@@ -147,6 +147,84 @@ class TestDowngradeDialog(unittest.TestCase):
 
         self.assertIn("Yes", yes_label)
         self.assertIn("btn-success", yes_classes)
+        self.assertIn("installed successfully", final_message)
+        self.assertEqual(reinstall_args, ("TestApp", "com.test.app", "TestApp-1.0-TestSrc"))
+
+    def test_signature_mismatch_conflict_prompts_then_runs_uninstall_reinstall(self):
+        """INSTALL_FAILED_UPDATE_INCOMPATIBLE (installed app signed with a
+        different cert than the patched build -- typically the stock
+        Play Store version vs. EnhanciPy's own/custom keystore) must drive
+        the same uninstall+reinstall ConfirmDialog as the downgrade case,
+        not a dead-end generic error dialog."""
+        tmp_apk = tempfile.NamedTemporaryFile(suffix=".apk", delete=False)
+        tmp_apk.close()
+        apk_path = Path(tmp_apk.name)
+
+        conflict_result = InstallResult(
+            False,
+            "Rish installation failed: INSTALL_FAILED_UPDATE_INCOMPATIBLE: "
+            "Existing package com.test.app signatures do not match newer "
+            "version; ignoring!",
+            conflict=CONFLICT_SIGNATURE_MISMATCH,
+            exported_name="TestApp-1.0-TestSrc",
+        )
+        reinstall_result = InstallResult(
+            True, "TestApp installed successfully via Rish with Dex Optimization!"
+        )
+
+        async def scenario():
+            with (
+                patch.object(PatchProgressScreen, "start_patching_process", lambda self: None),
+                patch(
+                    "src.tui.screens.patch_progress.app_installer.install_or_export",
+                    return_value=conflict_result,
+                ),
+                patch(
+                    "src.tui.screens.patch_progress.app_installer.uninstall_and_reinstall",
+                    return_value=reinstall_result,
+                ) as mock_reinstall,
+            ):
+                app = EnhancifyApp()
+                async with app.run_test(size=(80, 24)) as pilot:
+                    await pilot.pause()
+                    app.selected_app = {
+                        "appName": "TestApp",
+                        "version": "1.0",
+                        "pkgName": "com.test.app",
+                    }
+                    screen = PatchProgressScreen()
+                    app.push_screen(screen)
+                    await pilot.pause()
+                    screen.output_apk = apk_path
+
+                    screen.action_install()
+
+                    found_confirm = await _wait_for(
+                        pilot, lambda: isinstance(app.screen, ConfirmDialog)
+                    )
+                    self.assertTrue(found_confirm, "ConfirmDialog never appeared")
+                    dialog_title = app.screen.dialog_title
+
+                    await pilot.click("#btn-yes")
+
+                    found_message = await _wait_for(
+                        pilot,
+                        lambda: isinstance(app.screen, MessageDialog)
+                        and app.screen.dialog_title == "Installation Result",
+                    )
+                    self.assertTrue(found_message, "Final MessageDialog never appeared")
+                    final_message = app.screen.message
+
+                mock_reinstall.assert_called_once()
+                reinstall_args = mock_reinstall.call_args[0]
+                return dialog_title, final_message, reinstall_args
+
+        try:
+            dialog_title, final_message, reinstall_args = _run_async(scenario())
+        finally:
+            apk_path.unlink(missing_ok=True)
+
+        self.assertEqual(dialog_title, "Signature Mismatch Detected")
         self.assertIn("installed successfully", final_message)
         self.assertEqual(reinstall_args, ("TestApp", "com.test.app", "TestApp-1.0-TestSrc"))
 

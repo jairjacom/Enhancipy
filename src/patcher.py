@@ -171,12 +171,12 @@ class PatcherEngine:
         """Execute patching process and stream logs."""
         if not shutil.which("java"):
             return False, "Java runtime (OpenJDK 17/21/25) not found in PATH!"
+        java_ver_str, _ = env.detect_java_version(refresh=True)
 
         patches_ext = assets_mgr.get_patches_extension(cfg.source_name)
         cli_repo = assets_mgr.resolve_cli_repo(patches_ext, cfg.source_name)
         min_java = CLI_MIN_JAVA_VERSION.get(cli_repo)
         if min_java is not None:
-            java_ver_str, _ = env.detect_java_version()
             if java_ver_str.isdigit() and int(java_ver_str) < min_java:
                 return False, (
                     f"{cli_repo} requires OpenJDK {min_java}+ but found OpenJDK "

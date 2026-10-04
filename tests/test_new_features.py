@@ -361,6 +361,7 @@ class TestChangelogBeforeDownload(unittest.TestCase):
         from textual.widgets import ListView
 
         from src.assets import assets_mgr
+        from src.apkmirror import apkmirror_scraper
 
         os.environ["ENHANCIFY_BOOT_SECONDS"] = "0.05"
         patches_json = [
@@ -390,6 +391,8 @@ class TestChangelogBeforeDownload(unittest.TestCase):
                     assets_mgr, "detect_cli_capabilities", return_value={}
                 ), mock.patch.object(
                     assets_mgr, "load_or_fetch_patches_json", return_value=patches_json
+                ), mock.patch.object(
+                    apkmirror_scraper, "resolve_apps_info", return_value={}
                 ):
                     # ---------- BACK button: aborts the fetch
                     app.push_screen("app_select_screen")

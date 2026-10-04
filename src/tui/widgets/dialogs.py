@@ -29,12 +29,12 @@ def _ui_call(screen: ModalScreen, fn: Callable[[], None]) -> None:
     itself (e.g. pilot tests, or UI-side progress ticks). Detect that and call
     directly instead.
     """
-    app = getattr(screen, "app", None)
-    if app is None:
-        try:
-            fn()
-        except Exception:
-            pass
+    try:
+        app = screen.app
+    except RuntimeError:
+        # textual._context.NoActiveAppError (a RuntimeError; not publicly
+        # exported): the modal was already dismissed/detached and this is a
+        # worker thread with no active_app context. Nothing on screen to update.
         return
     try:
         # _thread_id is set by Textual App; compare to current thread

@@ -189,5 +189,39 @@ class TestPrivilegeCaching(unittest.TestCase):
         self.assertEqual(results, [(False, True, "Rish Mode")] * 2)
 
 
+class TestJavaVersionCaching(unittest.TestCase):
+    """detect_java_version() memoizes for the process lifetime; the min-JDK
+    patch gate (src/patcher.py run_patch) relies on refresh=True to see a
+    JDK installed/upgraded mid-session instead of reusing a stale probe."""
+
+    def test_cached_until_refresh(self):
+        env = Environment(workspace_dir=None)
+        responses = [
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="",
+                stderr='openjdk version "17.0.9" 2023-10-17\n',
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="",
+                stderr='openjdk version "21.0.1" 2023-10-17\n',
+            ),
+        ]
+        with (
+            patch("src.environment.shutil.which", return_value="/usr/bin/java"),
+            patch("src.environment.subprocess.run", side_effect=responses) as run,
+        ):
+            self.assertEqual(env.detect_java_version(), ("17", "openjdk-17"))
+            self.assertEqual(env.detect_java_version(), ("17", "openjdk-17"))
+            self.assertEqual(run.call_count, 1)
+
+            self.assertEqual(
+                env.detect_java_version(refresh=True), ("21", "openjdk-21")
+            )
+            self.assertEqual(run.call_count, 2)
+
+            self.assertEqual(env.detect_java_version(), ("21", "openjdk-21"))
+            self.assertEqual(run.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
