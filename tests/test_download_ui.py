@@ -38,6 +38,30 @@ class TestGradientWidgets(unittest.TestCase):
         self.assertGreater(len(GradientSpinner.FRAME_CHARS), 4)
 
 
+class TestUiCallDetached(unittest.TestCase):
+    """_ui_call(screen, fn) must not crash when the modal screen has already
+    been dismissed/detached and fn is invoked from a worker thread with no
+    active_app context (NoActiveAppError, a RuntimeError subclass raised by
+    Textual's MessagePump.app). This is the root cause of the "Asset load
+    failed: " empty-reason dialog after a patches download."""
+
+    def test_update_on_detached_modal_from_worker_thread_is_noop(self):
+        modal = ParseProgressModal("X")
+        errors: list = []
+
+        def worker():
+            try:
+                modal.update_message("hi")
+            except BaseException as e:
+                errors.append(e)
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join()
+
+        self.assertEqual(errors, [])
+
+
 class TestDownloadCancel(unittest.TestCase):
     def test_cancel_before_start(self):
         ev = threading.Event()

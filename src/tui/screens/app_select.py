@@ -332,7 +332,6 @@ class AppSelectScreen(BaseScreen):
                             }
                         )
 
-                parse_modal.update_message("Resolving real app names from APKMirror...")
                 self._resolve_apkmirror_names(apps, rel, active_source)
 
                 self.apps_data = sorted(apps, key=lambda x: x["appName"])

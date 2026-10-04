@@ -33,14 +33,20 @@ def _first_rish_error_line(text: str) -> Optional[str]:
 
 
 CONFLICT_VERSION_DOWNGRADE = "version_downgrade"
+CONFLICT_SIGNATURE_MISMATCH = "signature_mismatch"
 
 
 class InstallResult(NamedTuple):
     """Outcome of install_or_export / uninstall_and_reinstall.
 
-    `conflict` is a machine-readable reason the caller can act on (currently
-    only CONFLICT_VERSION_DOWNGRADE); `exported_name` is the staged APK's
-    name so the UI can retry the rish script after resolving the conflict.
+    `conflict` is a machine-readable reason the caller can act on:
+    CONFLICT_VERSION_DOWNGRADE (pm rejected a same-signature downgrade) or
+    CONFLICT_SIGNATURE_MISMATCH (the installed app -- typically the stock
+    Play Store build -- is signed with a different certificate than the
+    patched build, so pm refuses to treat it as an update). Both have the
+    same remedy: uninstall the existing app, then install the patched one.
+    `exported_name` is the staged APK's name so the UI can retry the rish
+    script after resolving the conflict.
     """
 
     ok: bool
@@ -442,8 +448,11 @@ class AppInstaller:
 
         conflict = None
         if install_failure_code_file.exists():
-            if install_failure_code_file.read_text().strip() == "INSTALL_FAILED_VERSION_DOWNGRADE":
+            code = install_failure_code_file.read_text().strip()
+            if code == "INSTALL_FAILED_VERSION_DOWNGRADE":
                 conflict = CONFLICT_VERSION_DOWNGRADE
+            elif code == "INSTALL_FAILED_UPDATE_INCOMPATIBLE":
+                conflict = CONFLICT_SIGNATURE_MISMATCH
 
         return InstallResult(
             False,

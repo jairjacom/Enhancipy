@@ -56,6 +56,18 @@ case "$CMD" in
         if [ -n "$STUB_INSTALL_OUTPUT" ]; then echo "$STUB_INSTALL_OUTPUT"; exit 0; fi
         echo "Success" ;;
     *"-d '/data/local/tmp/enhancify'"*) noise; echo "Exists" ;;
+    *"mv -f"*)
+        echo "$CMD" >> "$STUB_LOG"
+        # Re-parse $CMD exactly like the real `rish`/Shizuku backend does
+        # (a brand-new shell parses the whole string from scratch): report
+        # how many words `mv` actually received, so a test can prove quoting
+        # kept a space/unicode-containing path intact as ONE argument
+        # instead of silently splitting (the real-world symptom was
+        # "Failed to stage APK for installation (move to /data/local/tmp
+        # failed)" on any app name/exported filename containing a space).
+        eval "set -- $CMD"
+        echo "ARGC=$#" >> "$STUB_LOG"
+        ;;
     *"[ -e "*) noise; echo "Exists" ;;
     *) : ;;
 esac
@@ -81,7 +93,7 @@ class RishScriptTestCase(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _run(self, sdk, reject_flags=False, config_text=None, unset_env=None, install_output=None,
-              stderr_probes=False, installed=False, noise=False):
+              stderr_probes=False, installed=False, noise=False, exported_name="TestApp-1.0-Src"):
         if config_text is not None:
             self.config_file.write_text(config_text)
 
@@ -100,7 +112,7 @@ class RishScriptTestCase(unittest.TestCase):
             env.pop(key, None)
 
         return subprocess.run(
-            ["bash", str(RISH_SCRIPT), "com.test.app", "TestApp", "TestApp-1.0-Src", str(self.storage)],
+            ["bash", str(RISH_SCRIPT), "com.test.app", "TestApp", exported_name, str(self.storage)],
             env=env,
             capture_output=True,
             text=True,
@@ -236,7 +248,28 @@ class RishScriptTestCase(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.storage / "install_type.txt").read_text().strip(), "update")
 
+    def test_mv_quoting_survives_names_with_spaces_and_unicode(self):
+        """Root cause of a real on-device failure: "Failed to stage APK for
+        installation (move to /data/local/tmp failed)" on any app whose
+        exported filename contains a space (e.g. "Niagara Launcher \u2027 Home
+        Screen-1.16.28-hoo-dles") -- $EXPORTED_APP_PATH was interpolated
+        unquoted into the string handed to `rish -c`, which re-parses that
+        whole string as a brand-new command line on the device side, so the
+        embedded space silently split the path into multiple argv words
+        and `mv` failed. The stub's `mv -f` case re-parses $CMD exactly the
+        same way and reports the resulting word count."""
+        result = self._run(
+            sdk=34,
+            exported_name="Niagara Launcher \u2027 Home Screen-1.16.28-hoo-dles",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+        log_lines = self._log_lines()
+        mv_lines = [l for l in log_lines if l.startswith("mv -f")]
+        self.assertEqual(len(mv_lines), 1)
+        # mv, -f, <source>, <dest> -- exactly 4 words if quoting held.
+        self.assertIn("ARGC=4", log_lines)
+        self.assertFalse((self.storage / "install_error.txt").exists())
 
 
 if __name__ == "__main__":
