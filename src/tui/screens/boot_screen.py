@@ -175,6 +175,9 @@ class BootScreen(Screen):
         # usually resolved on arrival (su + rish probe takes ~1-13s). Separate
         # thread: must not delay the dependency bootstrap in _fetch_boot_info.
         threading.Thread(target=env.check_privileges, daemon=True).start()
+        # Warm the Java-version cache behind the splash so the Specs screen's
+        # first open doesn't block on spawning `java -version`.
+        threading.Thread(target=env.detect_java_version, daemon=True).start()
 
     def _tick(self) -> None:
         if self._deps_active:
