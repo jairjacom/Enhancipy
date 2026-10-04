@@ -463,6 +463,68 @@ grepped for any prior working-dir name — none found).
     the resulting word count. Confirmed the exact failure mode pre-fix via
     `git stash`: 8 words (path split apart) instead of the correct 4
     (`mv`, `-f`, source, dest). Full suite: 146/146 passing.
+- Fixed (this session): the first successful bundle-app Rish install
+  (Niagara Launcher, right after the Spoof-Signature fix above let it
+  patch successfully for the first time) failed with `pm install`'s
+  `INSTALL_FAILED_INVALID_APK: Failed to extract native libraries,
+  res=-2`, reported live via `rish_log.txt`/`install_error.txt` from this
+  device — a 5th, pre-existing bug in the same merge/optimize pipeline,
+  exposed only because patching finally reached the install step for the
+  first time this session.
+  - Root cause: `android:extractNativeLibs=false` was set in the
+    manifest, but the native `lib/*.so` entries were DEFLATE-compressed —
+    an invalid combination (confirmed via `aapt2 dump xmltree` +
+    `zipfile` inspection of the real merged APK). `false` means "mmap the
+    libs directly from the APK, don't extract", which requires them
+    stored uncompressed; `pm install`'s native-lib-extraction stage
+    rejects the contradiction before ever reaching signature
+    verification. `AntiSplitManager.antisplit_apkm/apks/xapk`
+    (`src/antisplit.py`) run `APKEditor.jar m` with its default
+    `-extractNativeLibs manifest` (auto-detect) mode, which produced the
+    wrong result for this app's bundle (verified correct on a cached
+    YouTube bundle, wrong on Niagara's — a third-party APKEditor
+    behavior, not reproducible top-down, so not fully root-caused inside
+    APKEditor itself). `optimize_native_libs`'s own zip-rebuild (the
+    *default* single-APK path — `OPTIMIZE_LIBS` is on by default for any
+    multi-ABI app, not just bundles) has the exact same defect
+    independently: it force-compresses every file except `.arsc`,
+    without regard for the original `extractNativeLibs` value — a latent
+    landmine for any default-config multi-ABI app, found by inspection
+    while fixing the bundle case (not yet reproduced as a user-facing
+    failure, but mechanism-identical and confirmed via a synthetic
+    fixture).
+  - Fix: both `APKEditor.jar m` invocations now pass
+    `-extractNativeLibs false` explicitly (APKEditor's own documented
+    override: "set manifest attribute 'false' and store libraries
+    un-compressed with 4096 alignment" — removes the ambiguity entirely,
+    and uncompressed is valid Android-side regardless of what the
+    original manifest declared). `optimize_native_libs`'s repackage now
+    stores `lib/*.so` uncompressed too, matching `.arsc`.
+  - Byte alignment of the now-uncompressed libs is intentionally **not**
+    re-aligned locally: tried it (`zipalign -P 16 4` before
+    `_sign_for_patching`) and found apksigner's v1 JAR signing reflows
+    zip entry offsets regardless (27 of 37 libs ended up misaligned again
+    after signing); tried aligning *after* signing instead and found the
+    vendored `utils/zipalign` binary strips the APK Signing Block
+    entirely when re-aligning an already-v2/v3-signed APK (not
+    signing-block-aware). Resolved by relying on the downstream patch
+    CLI's own "Aligning APK" pass instead, which is always in the
+    pipeline (every antisplit/optimize output goes through `run_patch`
+    before install, no shortcut path skips it) and was verified via a
+    real end-to-end run to produce 0 misaligned libs regardless of the
+    input's alignment state. The dead `_zipalign` helper was removed
+    rather than left in as inert/misleading code.
+  - Verified end-to-end on this device: re-ran the real
+    `antisplit_apkm` → real CLI `patch` pipeline against a cached YouTube
+    bundle. Final output: all 37 libs `compress_type=0` (stored), 0
+    misaligned (`zipalign -c -P 16 4`), manifest `extractNativeLibs=false`
+    consistent with storage, cert present pre-patch (confirms the Spoof
+    Signature fix above still holds). New
+    `tests/test_antisplit_signing.py::TestMergeForcesExtractNativeLibsFalse`
+    (3 tests, pins the flag is actually passed to APKEditor for all three
+    merge methods) and `::TestOptimizeNativeLibsStoresUncompressed` (pins
+    native libs survive as stored/uncompressed). Confirmed all 4 fail
+    pre-fix via `git stash`. Full suite: 150/150 passing.
 - Candidates for next session (not yet started), in priority order:
   1. **`CyberHeader` badge colors are dead code** — `mode_color`/
      `net_color` (`src/tui/widgets/header.py:64,68`) are computed from

@@ -250,7 +250,7 @@ class AntiSplitManager:
             except Exception:
                 return False
 
-            cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(tmp_path), "-o", str(output_apk)]
+            cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(tmp_path), "-o", str(output_apk), "-extractNativeLibs", "false"]
             code, _, _ = run_command(cmd, timeout=60)
             if code != 0 or not output_apk.exists():
                 return False
@@ -275,7 +275,7 @@ class AntiSplitManager:
             except Exception:
                 return False
 
-            cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(tmp_path), "-o", str(output_apk)]
+            cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(tmp_path), "-o", str(output_apk), "-extractNativeLibs", "false"]
             code, _, _ = run_command(cmd, timeout=60)
             if code != 0 or not output_apk.exists():
                 return False
@@ -339,7 +339,7 @@ class AntiSplitManager:
                 if lang_id in split_map and (tmp_path / split_map[lang_id]).exists():
                     shutil.copy2(tmp_path / split_map[lang_id], merge_dir / split_map[lang_id])
 
-            cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(merge_dir), "-o", str(output_apk)]
+            cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(merge_dir), "-o", str(output_apk), "-extractNativeLibs", "false"]
             code, _, _ = run_command(cmd, timeout=60)
             if code != 0 or not output_apk.exists():
                 return False
@@ -394,7 +394,19 @@ class AntiSplitManager:
                     if sf.suffix.upper() in [".SF", ".MF", ".RSA", ".DSA", ".EC"]:
                         sf.unlink(missing_ok=True)
 
-            # Repackage APK
+            # Repackage APK. Native libs are stored uncompressed (matching
+            # .arsc): valid regardless of the app's original
+            # android:extractNativeLibs value (uncompressed+true is fine;
+            # extractNativeLibs=false *requires* it -- a compressed lib with
+            # extractNativeLibs=false is what causes `pm install` to fail
+            # with "Failed to extract native libraries, res=-2"). Byte
+            # alignment of these uncompressed entries is intentionally left
+            # to the patch CLI's own "Aligning APK" pass, which always runs
+            # downstream (this output is never installed without going
+            # through run_patch first) -- any alignment applied here gets
+            # reflowed anyway by _sign_for_patching's v1 JAR signing, and
+            # re-aligning an already-v2/v3-signed APK with the vendored
+            # zipalign corrupts the signing block (verified).
             rebuilt_apk = tmp_path / "temp.apk"
             with zipfile.ZipFile(rebuilt_apk, "w", zipfile.ZIP_DEFLATED) as zout:
                 for root, _, files in os.walk(tmp_path):
@@ -403,8 +415,9 @@ class AntiSplitManager:
                             continue
                         fpath = Path(root) / file
                         arcname = fpath.relative_to(tmp_path)
-                        # arsc uncompressed
-                        compress = zipfile.ZIP_STORED if str(arcname).endswith(".arsc") else zipfile.ZIP_DEFLATED
+                        arcname_str = str(arcname)
+                        store_raw = arcname_str.endswith(".arsc") or arcname_str.startswith(f"lib{os.sep}") or arcname_str.startswith("lib/")
+                        compress = zipfile.ZIP_STORED if store_raw else zipfile.ZIP_DEFLATED
                         zout.write(fpath, arcname, compress_type=compress)
 
             if rebuilt_apk.exists() and rebuilt_apk.stat().st_size > 0:
