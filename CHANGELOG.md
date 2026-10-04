@@ -1,5 +1,16 @@
 # EnhanciPy Changelog
 
+## [v1.3.6] — clearer error when your Java version is too old
+
+### Fixed
+
+- **Patching with some sources (e.g. MorpheApp) on OpenJDK 17 used to
+  crash with a raw Java error instead of a useful message.** EnhanciPy
+  now checks the CLI you're about to run against your installed Java
+  version beforehand, and if it's too old, tells you plainly which
+  OpenJDK version to install instead of letting the patch attempt
+  crash partway through.
+
 ## [v1.3.5] — screens open instantly now
 
 ### Fixed
