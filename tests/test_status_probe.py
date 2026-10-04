@@ -7,16 +7,20 @@ dials) synchronously on the UI thread on every screen mount — freezing the
 app on open. compose() must now render the last known values (or
 "Checking...") instantly, while on_mount() refreshes them in a background
 worker and recomposes the header/status-bar/unmount-button once the probe
-resolves.
+resolves. The Install button's live re-probe (refresh=True) must likewise
+run inside the install worker thread, not on the UI thread before the
+"Installing APK" modal appears.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("ENHANCIFY_BOOT_SECONDS", "0.01")
@@ -24,8 +28,11 @@ os.environ.setdefault("ENHANCIFY_BOOT_SECONDS", "0.01")
 from textual.widgets import Button, Label
 
 from src.environment import env
+from src.installer import InstallResult
 from src.tui.app import EnhancifyApp
 from src.tui.screens.main_menu import MainMenuScreen
+from src.tui.screens.patch_progress import PatchProgressScreen
+from src.tui.widgets.dialogs import MessageDialog, ProgressModal
 from src.tui.widgets.header import CyberHeader
 from src.tui.widgets.status_bar import CyberStatusBar
 
@@ -122,6 +129,76 @@ class TestStatusProbe(unittest.TestCase):
                     self.assertIn("Online", net_text)
 
         _run_async(scenario())
+
+    def test_install_press_returns_before_live_reprobe(self):
+        gate = self._gate
+        recorded_refresh_flags = []
+
+        def fake_check_privileges(*args, refresh=False, **kwargs):
+            recorded_refresh_flags.append(refresh)
+            if refresh:
+                gate.wait(5)
+            return (False, True, "Rish Mode")
+
+        tmp_apk = tempfile.NamedTemporaryFile(suffix=".apk", delete=False)
+        tmp_apk.close()
+        apk_path = Path(tmp_apk.name)
+
+        async def scenario():
+            with (
+                patch.object(
+                    PatchProgressScreen, "start_patching_process", lambda self: None
+                ),
+                patch(
+                    "src.tui.screens.patch_progress.app_installer.install_or_export",
+                    return_value=InstallResult(True, "ok"),
+                ) as mock_install,
+                patch.object(env, "check_privileges", side_effect=fake_check_privileges),
+                patch.object(env, "check_network", return_value=(True, True, "Online")),
+            ):
+                app = EnhancifyApp()
+                async with app.run_test(size=(80, 30)) as pilot:
+                    found = await _wait_for(
+                        pilot, lambda: isinstance(app.screen, MainMenuScreen)
+                    )
+                    self.assertTrue(found, "MainMenuScreen never appeared")
+
+                    app.selected_app = {
+                        "appName": "TestApp",
+                        "version": "1.0",
+                        "pkgName": "com.test.app",
+                    }
+                    screen = PatchProgressScreen()
+                    app.push_screen(screen)
+                    await pilot.pause()
+                    screen.output_apk = apk_path
+
+                    t0 = time.monotonic()
+                    screen.action_install()
+                    elapsed = time.monotonic() - t0
+                    self.assertLess(elapsed, 1.0, "action_install blocked on the live re-probe")
+
+                    found_modal = await _wait_for(
+                        pilot, lambda: isinstance(app.screen, ProgressModal)
+                    )
+                    self.assertTrue(found_modal, "ProgressModal never appeared")
+
+                    gate.set()
+
+                    found_message = await _wait_for(
+                        pilot,
+                        lambda: isinstance(app.screen, MessageDialog)
+                        and app.screen.dialog_title == "Installation Result",
+                    )
+                    self.assertTrue(found_message, "Final MessageDialog never appeared")
+
+                self.assertIn(True, recorded_refresh_flags)
+                self.assertEqual(mock_install.call_args[0][5:7], (False, True))
+
+        try:
+            _run_async(scenario())
+        finally:
+            apk_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

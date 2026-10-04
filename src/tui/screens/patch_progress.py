@@ -198,8 +198,6 @@ class PatchProgressScreen(BaseScreen):
         pkg_name = app_info.get("pkgName", "")
         source_name = config.get("SOURCE", "Anddea")
 
-        has_root, has_rish, _ = env.check_privileges(refresh=True)
-
         self._install_ctx = {
             "app_name": app_name,
             "pkg_name": pkg_name,
@@ -209,7 +207,7 @@ class PatchProgressScreen(BaseScreen):
 
         modal = ProgressModal("Installing APK", "Finalizing, signing, and installing APK...")
         self.app.push_screen(modal)
-        self.run_install_worker(modal, app_name, pkg_name, app_ver, source_name, has_root, has_rish)
+        self.run_install_worker(modal, app_name, pkg_name, app_ver, source_name)
 
     @work(thread=True)
     def run_install_worker(
@@ -219,10 +217,13 @@ class PatchProgressScreen(BaseScreen):
         pkg_name: str,
         app_ver: str,
         source_name: str,
-        has_root: bool,
-        has_rish: bool,
     ) -> None:
         try:
+            # Live re-probe (refresh=True): a stale boot-time negative must not
+            # decide the install. Runs here, off the UI thread: su + rish can
+            # take ~13s.
+            has_root, has_rish, _ = env.check_privileges(refresh=True)
+
             res = app_installer.install_or_export(
                 self.output_apk,
                 app_name,

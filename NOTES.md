@@ -327,10 +327,13 @@ grepped for any prior working-dir name — none found).
     `subprocess.run` call. Confirmed all three fail against pre-fix
     `src/` (`git stash push -- src`): two su calls instead of one, and
     both UI-thread timing assertions exceed their bounds (~5-6s).
-  - **Not yet verified live on a physical device beyond the automated
-    smoke script above** — AGENTS.md requires device verification for
-    rish/install-path changes; the user still needs to confirm the
-    live main menu badges/Unmount visibility and that pressing Install
-    still reports via Rish. Full suite: 141/141 passing.
+  - Verified live on device (`python main.py`, SDK 37, rish-capable,
+    non-root): main menu renders real badges with no freeze (`⚙️ Rish
+    Mode`, `🌐 Online`, `🤖 arm64-v8a` in both the header and the
+    status bar), and `Unmount Patched App` is correctly absent (this
+    device has no root). **Not yet verified: the Install button's live
+    re-probe on a real patched APK** — that needs an actual patch run
+    plus a Rish install, which the user should confirm themselves
+    before this merges. Full suite: 141/141 passing.
 
 
