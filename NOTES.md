@@ -525,6 +525,53 @@ grepped for any prior working-dir name — none found).
     merge methods) and `::TestOptimizeNativeLibsStoresUncompressed` (pins
     native libs survive as stored/uncompressed). Confirmed all 4 fail
     pre-fix via `git stash`. Full suite: 150/150 passing.
+- Fixed (this session): after the native-lib fix above, Niagara Launcher
+  patched and the merge/lib pipeline was clean, but Rish install hit a
+  6th, unrelated failure: `pm install` returned
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package bitpit.launcher
+  signatures do not match newer version; ignoring!` — and the TUI showed
+  a dead-end generic error dialog instead of the uninstall+reinstall
+  conflict prompt the user expected (it exists for the downgrade case,
+  reported live via `rish_log.txt`/`install_error.txt`).
+  - Not a bug in the signing/patch pipeline: this is standard Android
+    behavior — an app already installed from the Play Store carries
+    Google's/the developer's real signing certificate; any patched build
+    (EnhanciPy's auto-managed `revancify.keystore`, or a user's configured
+    custom keystore) is signed with a different one, and `pm install`
+    correctly refuses to treat a differently-signed APK as an in-place
+    update, regardless of `ALLOW_APP_VERSION_DOWNGRADE`/
+    `BYPASS_LOW_TARGET_SDK_BLOCK`. No flag bypasses this; the only
+    remedies are uninstall-then-install (loses app data) or installing
+    alongside under a renamed package.
+  - Real gap: `AppInstaller._rish_failure_result` (`src/installer.py`)
+    only recognized `INSTALL_FAILED_VERSION_DOWNGRADE` as a resolvable
+    conflict; `INSTALL_FAILED_UPDATE_INCOMPATIBLE` fell through to a
+    plain error dialog with no way to proceed short of manually
+    uninstalling outside the app. `uninstall_and_reinstall` was already
+    fully generic (doesn't care why it's being called), so this was a
+    missing-case gap, not a missing capability.
+  - Fix: new `CONFLICT_SIGNATURE_MISMATCH` constant alongside
+    `CONFLICT_VERSION_DOWNGRADE`; `_rish_failure_result` now maps
+    `INSTALL_FAILED_UPDATE_INCOMPATIBLE` to it.
+    `PatchProgressScreen` (`src/tui/screens/patch_progress.py`) gained
+    `_prompt_signature_mismatch` (same uninstall+reinstall
+    `ConfirmDialog`, wording explains *why* — different signing cert, not
+    a version issue) alongside the existing `_prompt_downgrade`; both now
+    share one `_on_conflict_confirm` callback (renamed from
+    `_on_downgrade_confirm`, which had no downgrade-specific logic in its
+    body — it just drives the already-generic
+    `uninstall_and_reinstall`).
+  - New `tests/test_installer.py::test_rish_signature_mismatch_failure_surfaces_conflict`
+    and `tests/test_downgrade_dialog.py::test_signature_mismatch_conflict_prompts_then_runs_uninstall_reinstall`
+    pin the mapping and the full conflict → dialog → retry wiring,
+    mirroring the existing downgrade tests. Updated
+    `test_installer.py::test_non_downgrade_failure_has_no_conflict`,
+    which had incidentally used `INSTALL_FAILED_UPDATE_INCOMPATIBLE` as
+    its example of an unhandled code — now genuinely unhandled
+    (`INSTALL_FAILED_INSUFFICIENT_STORAGE`), since the old example is
+    handled on purpose now. Confirmed both new tests fail pre-fix (hard
+    `ImportError` on the new constant, since nothing partially existed).
+    Full suite: 152/152 passing.
 - Candidates for next session (not yet started), in priority order:
   1. **`CyberHeader` badge colors are dead code** — `mode_color`/
      `net_color` (`src/tui/widgets/header.py:64,68`) are computed from
