@@ -375,6 +375,57 @@ grepped for any prior working-dir name — none found).
     `"requires OpenJDK 21+ ... found OpenJDK 17"`, then re-probing to a
     real "21" (same process, same stale cache) passes the gate on the next
     call. Full suite: 143/143 passing.
+- Fixed (this session): any patch depending on the Spoof Signature patch
+  family (used for license/paywall-bypass patches, e.g. hoo-dles' "Enable
+  Niagara Pro") crashed with a raw `app.morphe.util.NoCertificateException:
+  Unable to extract certificate from apk` on **every** bundle-distributed
+  app (APKM/APKS/XAPK from APKMirror) and on **every** multi-ABI app with
+  `OPTIMIZE_LIBS` on (the default) — not an APKMirror or patch-source
+  issue, confirmed by diffing a real captured `patch_log.txt` (Niagara
+  Launcher, source hoo-dles) against its raw pre-merge `base.apk` split.
+  - Root cause: `src/antisplit.py`'s `antisplit_apkm`/`antisplit_apks`/
+    `antisplit_xapk` merge split APKs via `APKEditor.jar m`, which can't
+    carry a per-split v2/v3 signature over to merged content and produces
+    a completely certificate-less APK (verified byte-for-byte: raw
+    `base.apk` has an `APK Sig Block 42` magic + `META-INF/CERT.*`; the
+    merged output has neither). `optimize_native_libs` independently
+    destroys signatures too — it explicitly deletes
+    `META-INF/*.SF/.RSA/.DSA/.EC` and rewrites the zip from scratch via
+    `zipfile.ZipFile`, which can't preserve the APK Signing Block either —
+    and runs by default on every multi-ABI single-APK download, since
+    `OPTIMIZE_LIBS` defaults `"on"` (`src/config.py:21`). The patch CLI's
+    cert extraction reads straight from the input APK's raw bytes during
+    patching, independent of any `--keystore`/`--unsigned` *output*-signing
+    flag, and there is no `--original-apk`/signer-source override
+    (`patch --help` only has output-signing flags) — so this crashed
+    deterministically whenever the input had nothing to extract.
+  - Fix: both code paths now call a new `AntiSplitManager._sign_for_patching`
+    right after producing their output, which generates an internal
+    throwaway PKCS12 keystore (`<storage>/antisplit.keystore`, via
+    `keytool`, lazy + cached) and re-signs with the vendored
+    `utils/apksigner.jar` (v1+v2+v3, `--min-sdk-version=1` to avoid relying
+    on binary-manifest parsing). This is correct, not just
+    crash-avoidance: the Spoof Signature patch family extracts *whatever*
+    certificate is present at patch time and patches the app's own
+    signature-check call sites to always report that embedded value — it
+    doesn't matter which key/cert was used, only that one exists. Both
+    operations are best-effort (signing failure leaves the pre-existing
+    unsigned-output behavior unchanged, never blocks the merge/strip
+    result).
+  - Verified end-to-end on this device with the real captured failure:
+    copied the exact Niagara Launcher merged output that had produced
+    `NoCertificateException`, confirmed it had zero signing material,
+    signed it with the new helper (confirmed `APK Sig Block 42` +
+    `META-INF/MANIFEST.MF` now present), then re-ran the *exact* failing
+    CLI command from the captured log against the signed file — it now
+    logs `INFO: Applied: Enable Niagara Pro` and writes a complete patched
+    output, no exception. New `tests/test_antisplit_signing.py`
+    (`TestSignForPatching`, 2 tests) exercises the real vendored
+    `apksigner.jar`/`keytool` (not mocked — the contract is "produces an
+    actually extractable certificate," which a mocked subprocess can't
+    prove) against a throwaway fixture APK, and keystore-caching.
+    Confirmed failing pre-fix via `git stash`. Full suite: 145/145
+    passing.
 - Candidates for next session (not yet started), in priority order:
   1. **`CyberHeader` badge colors are dead code** — `mode_color`/
      `net_color` (`src/tui/widgets/header.py:64,68`) are computed from

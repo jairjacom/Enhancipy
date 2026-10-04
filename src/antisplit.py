@@ -1,7 +1,9 @@
 """
 Enhancify Anti-Split & Native Library Optimizer Module
 Handles merging APKM, APKS, and XAPK bundle files into standalone APKs using APKEditor.jar
-and optimizing native libraries using aapt2 and zip.
+and optimizing native libraries using aapt2 and zip. Both operations destroy the APK's
+original certificate, so both re-sign the result with an internal throwaway keystore
+afterward (see _sign_for_patching) so cert-dependent patches don't crash.
 """
 
 import json
@@ -18,6 +20,20 @@ from typing import Callable, Dict, List, Optional, Tuple
 from src.deps import DependencyBootstrap
 from src.environment import env
 from src.utils import run_command
+
+# Internal keystore used only to re-stamp a certificate onto APKs whose
+# original signature was destroyed by this module's own processing (bundle
+# merge discards per-split v2/v3 signatures; native-lib stripping deletes
+# META-INF/*.SF/.RSA/.DSA/.EC). Cert-dependent patches (the Spoof Signature
+# patch family used by e.g. license/paywall-bypass patches) only need *some*
+# parseable certificate present at patch time -- they neutralize the app's
+# own signature check to always report whatever was embedded at patch time,
+# so the key/cert content is irrelevant. Password is a fixed, non-secret
+# constant: this keystore never signs anything the user installs or
+# distributes, it only has to make `java -jar <cli> patch` (and whatever
+# patch logic reads the input APK's certificate) not crash.
+_ANTISPLIT_KS_ALIAS = "antisplit"
+_ANTISPLIT_KS_PASS = "enhancipy-antisplit"
 
 
 LANGUAGE_MAP = {
@@ -48,10 +64,72 @@ class AntiSplitManager:
 
     def __init__(self, workspace_dir: Optional[Path] = None):
         self.workspace_dir = workspace_dir or Path(__file__).resolve().parent.parent
+        self.storage_dir = (self.workspace_dir / "storage") if workspace_dir else env.storage_dir
+        self.utils_dir = self.workspace_dir / "utils"
+        self.merge_keystore = self.storage_dir / "antisplit.keystore"
         self._deps = DependencyBootstrap(self.workspace_dir)
         self.bin_dir = self._deps.bin_dir
         self.aapt2_bin = self._deps.aapt2_bin
         self.apkeditor_jar = self._deps.apkeditor_jar
+
+    def _ensure_signing_keystore(self) -> bool:
+        """Generate the internal re-signing keystore (see module-level
+        comment) via keytool if it doesn't exist yet."""
+        if self.merge_keystore.exists():
+            return True
+        if not shutil.which("keytool"):
+            return False
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            "keytool", "-genkeypair", "-v",
+            "-keystore", str(self.merge_keystore),
+            "-storetype", "PKCS12",
+            "-alias", _ANTISPLIT_KS_ALIAS,
+            "-keyalg", "RSA", "-keysize", "2048", "-sigalg", "SHA512withRSA",
+            "-validity", "10000",
+            "-storepass", _ANTISPLIT_KS_PASS,
+            "-keypass", _ANTISPLIT_KS_PASS,
+            "-dname", "CN=EnhanciPy, OU=EnhanciPy, O=EnhanciPy, L=Unknown, ST=Unknown, C=US",
+        ]
+        code, _, _ = run_command(cmd, timeout=30)
+        return code == 0 and self.merge_keystore.exists()
+
+    def _sign_for_patching(self, apk_path: Path) -> bool:
+        """Re-sign an APK that lost its original certificate during merge or
+        native-lib stripping, so cert-dependent patches (e.g. Spoof
+        Signature) can extract *a* certificate instead of crashing with
+        NoCertificateException. Best-effort: on failure the caller still
+        gets back the merged/stripped (certificate-less) APK, matching the
+        pre-existing behavior."""
+        if not apk_path.exists() or not self._ensure_signing_keystore():
+            return False
+        apksigner_jar = next(self.utils_dir.glob("apksigner*.jar"), None)
+        if not apksigner_jar or not apksigner_jar.exists():
+            return False
+
+        signed_out = apk_path.parent / f"{apk_path.stem}_signed.apk"
+        cmd = [
+            "java", "--enable-native-access=ALL-UNNAMED",
+            "-Xms100m", "-Xmx512m",
+            "-jar", str(apksigner_jar), "sign",
+            "--ks", str(self.merge_keystore),
+            "--ks-pass", f"pass:{_ANTISPLIT_KS_PASS}",
+            "--key-pass", f"pass:{_ANTISPLIT_KS_PASS}",
+            "--ks-type", "PKCS12",
+            "--min-sdk-version", "1",
+            "--v1-signing-enabled", "true",
+            "--v2-signing-enabled", "true",
+            "--v3-signing-enabled", "true",
+            "--v4-signing-enabled", "false",
+            "--out", str(signed_out),
+            str(apk_path),
+        ]
+        code, _, _ = run_command(cmd, timeout=60)
+        if code == 0 and signed_out.exists():
+            shutil.move(str(signed_out), str(apk_path))
+            return True
+        signed_out.unlink(missing_ok=True)
+        return False
 
     def ensure_apkeditor(self) -> bool:
         """Download APKEditor.jar from the EnhanciPy deps release if missing."""
@@ -174,7 +252,10 @@ class AntiSplitManager:
 
             cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(tmp_path), "-o", str(output_apk)]
             code, _, _ = run_command(cmd, timeout=60)
-            return code == 0 and output_apk.exists()
+            if code != 0 or not output_apk.exists():
+                return False
+            self._sign_for_patching(output_apk)
+            return True
 
     def antisplit_apks(self, input_apks: Path, output_apk: Path) -> bool:
         """Unpack APKS bundle and merge using APKEditor.jar."""
@@ -196,7 +277,10 @@ class AntiSplitManager:
 
             cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(tmp_path), "-o", str(output_apk)]
             code, _, _ = run_command(cmd, timeout=60)
-            return code == 0 and output_apk.exists()
+            if code != 0 or not output_apk.exists():
+                return False
+            self._sign_for_patching(output_apk)
+            return True
 
     def antisplit_xapk(
         self,
@@ -257,7 +341,10 @@ class AntiSplitManager:
 
             cmd = ["java", "-jar", str(self.apkeditor_jar), "m", "-f", "-i", str(merge_dir), "-o", str(output_apk)]
             code, _, _ = run_command(cmd, timeout=60)
-            return code == 0 and output_apk.exists()
+            if code != 0 or not output_apk.exists():
+                return False
+            self._sign_for_patching(output_apk)
+            return True
 
     # --- Native Library Optimization (RipLibs) ---
 
@@ -322,6 +409,7 @@ class AntiSplitManager:
 
             if rebuilt_apk.exists() and rebuilt_apk.stat().st_size > 0:
                 shutil.move(str(rebuilt_apk), str(apk_path))
+                self._sign_for_patching(apk_path)
                 return True
             return False
 
