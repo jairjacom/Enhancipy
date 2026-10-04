@@ -335,33 +335,59 @@ grepped for any prior working-dir name — none found).
     re-probe on a real patched APK** — that needs an actual patch run
     plus a Rish install, which the user should confirm themselves
     before this merges. Full suite: 141/141 passing.
+- Fixed (this session): `SpecsScreen` froze on every open (candidate #1
+  above), and a real race surfaced an empty "Asset load failed: " error
+  after a patches download, wiping `apps_data` (misdiagnosed in candidate
+  #3 above as device-thermal flakiness — it was reproducible 4/6 isolated
+  runs on an idle device).
+  - Freeze root cause: `SpecsScreen.compose_content` (`specs.py:61`) called
+    `env.detect_java_version()` uncached on every open (~0.4-0.6s `java
+    -version` spawn on the UI thread, same class of bug just fixed in
+    `CyberHeader`). Fix: `detect_java_version(refresh: bool = False)` now
+    memoizes like `get_arch()`; `run_patch` (`src/patcher.py`) passes
+    `refresh=True` so a mid-session JDK upgrade is still gated correctly;
+    `BootScreen.on_mount` gained a pre-warm thread so the cache is usually
+    already warm by the first Specs open.
+  - Race root cause: `AppSelectScreen.run_parse_worker`
+    (`app_select.py:284`) dismisses `parse_modal`, then line 335 called
+    `parse_modal.update_message(...)` on the now-detached modal from a
+    worker thread. `_ui_call` (`dialogs.py:25`)'s `getattr(screen, "app",
+    None)` doesn't catch `RuntimeError` — Textual's `MessagePump.app`
+    raises `NoActiveAppError` (a `RuntimeError` subclass) instead of
+    returning `None` on a detached screen with no `active_app` contextvar.
+    The exception landed in `run_parse_worker`'s `except`, surfacing
+    `MessageDialog("Error", "Asset load failed: ")` with an empty reason
+    and never setting `apps_data`. Fix: `_ui_call` now does
+    `try: app = screen.app / except RuntimeError: return` instead of
+    `getattr(..., None)`; the dead post-dismiss `update_message` call at
+    `app_select.py:335` was deleted (unreachable — the modal is always
+    dismissed one line before `_resolve_apkmirror_names` is invoked).
+  - Verified live on this device: 10/10 runs of the formerly-flaky test
+    passed (~2.4s each, vs. the pre-fix 4/6-failing baseline at ~18.7s);
+    stashing the `dialogs.py` fix reproduces the exact
+    `NoActiveAppError` the new regression test
+    (`tests/test_download_ui.py::TestUiCallDetached`) pins. Programmatic
+    `run_test()` smoke confirmed zero `java -version` subprocess calls on
+    either of two consecutive Specs pushes (one from boot pre-warm only),
+    and the Specs label correctly reads `Java Runtime : OpenJDK 25`. The
+    min-JDK gate's `refresh=True` was confirmed live: a stale cached "17"
+    correctly rejects a MorpheApp run with
+    `"requires OpenJDK 21+ ... found OpenJDK 17"`, then re-probing to a
+    real "21" (same process, same stale cache) passes the gate on the next
+    call. Full suite: 143/143 passing.
 - Candidates for next session (not yet started), in priority order:
-  1. **`SpecsScreen` still freezes on every open** — `src/tui/screens/specs.py:61`
-     calls `env.detect_java_version()` synchronously in `compose_content()`,
-     uncached, on every open (~0.4-0.6s). Same `java -version` UI-thread
-     spawn just removed from `CyberHeader`; `get_device_specs()` on the
-     line above is already cached, this isn't. Fix: memoize like
-     `get_arch()`, or move into the `BaseScreen` worker pattern.
-  2. **`CyberHeader` badge colors are dead code** — `mode_color`/
+  1. **`CyberHeader` badge colors are dead code** — `mode_color`/
      `net_color` (`src/tui/widgets/header.py:64,68`) are computed from
      real privilege/network state but never applied to the `Label`s;
      badges always render via static `badge-green`/`badge-cyan` CSS
      classes regardless of state. `CyberStatusBar` applies its computed
      color correctly. Either wire the header badges up the same way, or
      delete the dead computation — needs a decision first.
-  3. **Flaky `tests/test_new_features.py::TestChangelogBeforeDownload::
-     test_back_aborts_and_download_proceeds`** — a 600x0.02s=12s
-     busy-poll budget occasionally blows under sustained device
-     thermal/CPU load during a full-suite run (reproduced twice this
-     session, passed clean after a cooldown). Pre-existing, confirmed
-     not caused by the lazy-privilege-gate change (it runs earlier in
-     file-collection order, so no causal link). Worth a longer budget or
-     an event-based wait instead of fixed-iteration polling.
-  4. **Root-device Unmount-button path unverified live** — only a
+  2. **Root-device Unmount-button path unverified live** — only a
      non-root Rish device was available this session;
      `privileges_resolved()` -> `unmount.display = priv[0]` has mocked
      test coverage only. Needs a smoke pass on a rooted device.
-  5. **30s network-staleness tradeoff** — `check_network()`'s TTL means
+  3. **30s network-staleness tradeoff** — `check_network()`'s TTL means
      a screen opened right after a connectivity change can show a stale
      Online/Offline badge for up to 30s. By-design from this session,
      not a bug; worth a product call on whether polling is good enough
