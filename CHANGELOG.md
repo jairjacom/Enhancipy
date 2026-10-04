@@ -1,5 +1,26 @@
 # EnhanciPy Changelog
 
+## [v1.3.7] — opening Specs no longer freezes; bundle apps actually install now
+
+### Fixed
+
+- **The Specs screen froze for a moment every time you opened it.** It now
+  opens instantly.
+- **Downloading a patches list could end with an empty "Asset load
+  failed" error and a blank app list**, even though the list had actually
+  loaded fine. This no longer happens.
+- **Patching some apps downloaded as a "bundle" from APKMirror (or any app
+  with multiple CPU versions) could fail with a confusing certificate
+  error**, especially for patches that unlock paid features. Fixed.
+- **Those same apps could then fail to install** with an "invalid APK"
+  error after patching succeeded. Fixed.
+- **Rish installs failed to even start for any app whose name has a space
+  in it** (most apps) with a "failed to stage APK" error. Fixed.
+- **Installing a patched app over the original (unpatched) version from
+  the Play Store failed with a signature error and no way forward.**
+  EnhanciPy now offers to uninstall the original app and install the
+  patched one, the same way it already does for version downgrades.
+
 ## [v1.3.6] — clearer error when your Java version is too old
 
 ### Fixed
