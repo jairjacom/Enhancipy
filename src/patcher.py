@@ -13,11 +13,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+from src.assets import assets_mgr
 from src.config import config
 from src.environment import env
 
 
 MIN_HEAP_MB = 1024
+
+# Some CLI jars are compiled against a newer JDK than EnhanciPy's baseline
+# (OpenJDK 17). Running them on an older JDK fails with a raw
+# UnsupportedClassVersionError instead of a clear message, so gate known
+# cases here before launching the JVM.
+CLI_MIN_JAVA_VERSION: Dict[str, int] = {
+    "MorpheApp/morphe-cli": 21,
+}
 
 
 @dataclass
@@ -162,6 +171,18 @@ class PatcherEngine:
         """Execute patching process and stream logs."""
         if not shutil.which("java"):
             return False, "Java runtime (OpenJDK 17/21/25) not found in PATH!"
+
+        patches_ext = assets_mgr.get_patches_extension(cfg.source_name)
+        cli_repo = assets_mgr.resolve_cli_repo(patches_ext, cfg.source_name)
+        min_java = CLI_MIN_JAVA_VERSION.get(cli_repo)
+        if min_java is not None:
+            java_ver_str, _ = env.detect_java_version()
+            if java_ver_str.isdigit() and int(java_ver_str) < min_java:
+                return False, (
+                    f"{cli_repo} requires OpenJDK {min_java}+ but found OpenJDK "
+                    f"{java_ver_str}. Install a newer JDK (e.g. `pkg install "
+                    f"openjdk-{min_java}`) and try again."
+                )
 
         heap_mb, gc_mode, jvm_args = self._calculate_heap_and_gc()
 
