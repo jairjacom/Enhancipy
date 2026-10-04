@@ -335,5 +335,36 @@ grepped for any prior working-dir name — none found).
     re-probe on a real patched APK** — that needs an actual patch run
     plus a Rish install, which the user should confirm themselves
     before this merges. Full suite: 141/141 passing.
+- Candidates for next session (not yet started), in priority order:
+  1. **`SpecsScreen` still freezes on every open** — `src/tui/screens/specs.py:61`
+     calls `env.detect_java_version()` synchronously in `compose_content()`,
+     uncached, on every open (~0.4-0.6s). Same `java -version` UI-thread
+     spawn just removed from `CyberHeader`; `get_device_specs()` on the
+     line above is already cached, this isn't. Fix: memoize like
+     `get_arch()`, or move into the `BaseScreen` worker pattern.
+  2. **`CyberHeader` badge colors are dead code** — `mode_color`/
+     `net_color` (`src/tui/widgets/header.py:64,68`) are computed from
+     real privilege/network state but never applied to the `Label`s;
+     badges always render via static `badge-green`/`badge-cyan` CSS
+     classes regardless of state. `CyberStatusBar` applies its computed
+     color correctly. Either wire the header badges up the same way, or
+     delete the dead computation — needs a decision first.
+  3. **Flaky `tests/test_new_features.py::TestChangelogBeforeDownload::
+     test_back_aborts_and_download_proceeds`** — a 600x0.02s=12s
+     busy-poll budget occasionally blows under sustained device
+     thermal/CPU load during a full-suite run (reproduced twice this
+     session, passed clean after a cooldown). Pre-existing, confirmed
+     not caused by the lazy-privilege-gate change (it runs earlier in
+     file-collection order, so no causal link). Worth a longer budget or
+     an event-based wait instead of fixed-iteration polling.
+  4. **Root-device Unmount-button path unverified live** — only a
+     non-root Rish device was available this session;
+     `privileges_resolved()` -> `unmount.display = priv[0]` has mocked
+     test coverage only. Needs a smoke pass on a rooted device.
+  5. **30s network-staleness tradeoff** — `check_network()`'s TTL means
+     a screen opened right after a connectivity change can show a stale
+     Online/Offline badge for up to 30s. By-design from this session,
+     not a bug; worth a product call on whether polling is good enough
+     or a push-based listener is warranted.
 
 
