@@ -20,6 +20,8 @@ measured ~1.0s rish round trip).
 from __future__ import annotations
 
 import subprocess
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -155,6 +157,36 @@ class TestPrivilegeCaching(unittest.TestCase):
                 (False, True, "Rish Mode"),
             )
         mock_run.assert_not_called()
+
+    def test_concurrent_callers_share_one_probe(self):
+        """Two threads racing check_privileges() before the first probe
+        completes must not each spawn their own su/rish — the second
+        caller blocks on the lock and reuses the first result."""
+        calls = []
+
+        def fake_run(*args, **kwargs):
+            calls.append(args)
+            time.sleep(0.2)
+            return _completed(1)
+
+        results = []
+
+        def worker():
+            results.append(self.env.check_privileges())
+
+        with (
+            patch("src.environment.subprocess.run", side_effect=fake_run),
+            patch("src.environment.rish_available", return_value=True),
+        ):
+            t1 = threading.Thread(target=worker)
+            t2 = threading.Thread(target=worker)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(results, [(False, True, "Rish Mode")] * 2)
 
 
 if __name__ == "__main__":

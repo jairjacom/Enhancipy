@@ -275,4 +275,65 @@ grepped for any prior working-dir name — none found).
     apply, but a real-device keyboard-show/hide check is still recommended
     before trusting pixel-perfect behavior outside the test harness. Full
     suite: 138/138 passing.
+- Fixed (this session): every screen froze on open. Root cause:
+  `BaseScreen.compose()` ran `env.check_privileges()` (`su -c exit`,
+  timeout 5, then the rish probe, timeout 8) and `env.check_network()`
+  (two 0.8s socket dials, 30s TTL) synchronously on the UI thread on
+  *every* screen mount. `CyberHeader.compose()` additionally spawned
+  `java -version` (~0.43s measured) on every mount for a `java_ver`
+  result nobody read, plus an uncached `getprop` arch lookup
+  (~0.20s). `PatchProgressScreen.action_install` also blocked the UI
+  thread with `env.check_privileges(refresh=True)` before the
+  "Installing APK" modal could appear.
+  - Fix (`src/environment.py`): `check_privileges()`/`check_network()`
+    bodies now run under `threading.Lock`s, so concurrent callers
+    share one in-flight probe instead of racing su/rish/sockets
+    independently; `get_arch()` is memoized (ABI can't change at
+    runtime); new `last_privileges()`/`last_network_status()` peek the
+    cache without probing. `BaseScreen.compose()`
+    (`src/tui/screens/base.py`) now renders the last known values (or
+    `"Checking..."`) instantly and `on_mount()` refreshes them via a
+    `@work(thread=True)` worker that recomposes
+    `CyberHeader`/`CyberStatusBar` and calls a new
+    `privileges_resolved()` hook on the UI thread.
+    `MainMenuScreen`'s root-only "Unmount Patched App" button is now
+    always composed with `display` toggled by that hook instead of
+    being conditionally yielded. `BootScreen.on_mount` fires a
+    `check_privileges()` pre-warm thread behind the splash so the main
+    menu is usually already resolved on arrival (reuses the same probe
+    via the step-1 lock, never probes twice). `CyberHeader` no longer
+    calls `detect_java_version()`. `PatchProgressScreen.run_install_worker`
+    (not `action_install`) now does the `refresh=True` re-probe, inside
+    the thread worker, after the "Installing APK" modal is already
+    pushed.
+  - Timing smoke (`EnhancifyApp().run_test`, this device, SDK 37, Rish
+    Mode): boot → main menu 2.887s → 0.481s; Settings push/pop
+    ~0.98s → ~0.32s per round trip. Final header badge still resolves
+    to the real `⚙️ Rish Mode` once the worker completes.
+  - New `tests/test_status_probe.py` (2 tests):
+    `test_screen_mounts_before_privilege_probe_and_updates_after` pins
+    that the main menu appears in <2s while a gated `check_privileges`
+    is still blocked, shows `"Checking..."` and a hidden unmount
+    button, then picks up `"Root Mode"` on the header/status bar and
+    reveals the button once the gate releases.
+    `test_install_press_returns_before_live_reprobe` pins that
+    `action_install()` returns in <1s and the "Installing APK" modal
+    appears before a gated live re-probe resolves, and that
+    `install_or_export` is called with the post-probe
+    `(has_root, has_rish)` values. New
+    `TestPrivilegeCaching.test_concurrent_callers_share_one_probe`
+    (`tests/test_environment.py`) pins the single-flight lock: two
+    threads racing `check_privileges()` produce exactly one
+    `subprocess.run` call. Confirmed all three fail against pre-fix
+    `src/` (`git stash push -- src`): two su calls instead of one, and
+    both UI-thread timing assertions exceed their bounds (~5-6s).
+  - Verified live on device (`python main.py`, SDK 37, rish-capable,
+    non-root): main menu renders real badges with no freeze (`⚙️ Rish
+    Mode`, `🌐 Online`, `🤖 arm64-v8a` in both the header and the
+    status bar), and `Unmount Patched App` is correctly absent (this
+    device has no root). **Not yet verified: the Install button's live
+    re-probe on a real patched APK** — that needs an actual patch run
+    plus a Rish install, which the user should confirm themselves
+    before this merges. Full suite: 141/141 passing.
+
 
