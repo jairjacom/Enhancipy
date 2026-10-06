@@ -135,6 +135,12 @@ ButtonBar Button {
     background: $enh-surface;
 }
 
+.badge-red {
+    border: round $enh-danger;
+    color: $enh-danger;
+    background: $enh-surface;
+}
+
 .container-box {
     padding: 1;
     height: 1fr;
