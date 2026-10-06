@@ -1,5 +1,18 @@
 # EnhanciPy Changelog
 
+## [v1.3.8] — status badges and scrollbars now match your theme
+
+### Fixed
+
+- **The privilege and network status badges in the header always showed
+  the same two colors**, no matter the actual mode or connection state.
+  They now use distinct colors for Rish Mode, root, offline, and partial
+  connectivity, so you can tell the state at a glance.
+- **Scrollbars everywhere except the main screen border ignored your
+  selected theme**, always showing a fixed navy thumb on a black track —
+  in list screens, detail cards, the log viewer, and dialogs. They now
+  use your theme's colors and update immediately when you switch themes.
+
 ## [v1.3.7] — opening Specs no longer freezes; bundle apps actually install now
 
 ### Fixed
