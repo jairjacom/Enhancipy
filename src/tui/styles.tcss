@@ -135,15 +135,16 @@ ButtonBar Button {
     background: $enh-surface;
 }
 
+.badge-red {
+    border: round $enh-danger;
+    color: $enh-danger;
+    background: $enh-surface;
+}
+
 .container-box {
     padding: 1;
     height: 1fr;
     overflow-y: auto;
-}
-
-ContentContainer {
-    scrollbar-color: $enh-accent;
-    scrollbar-color-hover: $enh-accent-2;
 }
 
 /* Detail cards (patch info, gmscore/pothelper/specs/token summaries) are

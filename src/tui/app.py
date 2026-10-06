@@ -13,7 +13,7 @@ from textual.screen import Screen
 
 from src.config import config
 from src.environment import env
-from src.theme import THEME_MAP, css_variables, get_current_theme
+from src.theme import THEME_MAP, css_variables, get_current_theme, palette
 from src.tui.scrollbar import ArrowScrollBarRender
 from src.tui.screens.app_select import AppSelectScreen
 from src.tui.screens.boot_screen import BootScreen
@@ -116,8 +116,25 @@ class EnhancifyApp(App):
 
     def get_css_variables(self) -> Dict[str, str]:
         """Inject the active theme's tokens as `$enh-*` CSS variables so the
-        stylesheet re-resolves them on `refresh_css()` — see apply_theme()."""
-        return {**super().get_css_variables(), **css_variables(THEME_MAP.get(self._theme_id))}
+        stylesheet re-resolves them on `refresh_css()` — see apply_theme().
+        Also re-points Textual's built-in `$scrollbar*` design variables at
+        the theme so every widget's scrollbar (not just ContentContainer)
+        follows it."""
+        pal = palette(THEME_MAP.get(self._theme_id))
+        scrollbar_vars = {
+            "scrollbar": pal["accent"],
+            "scrollbar-hover": pal["accent_2"],
+            "scrollbar-active": pal["accent_2"],
+            "scrollbar-background": pal["bg"],
+            "scrollbar-background-hover": pal["bg"],
+            "scrollbar-background-active": pal["bg"],
+            "scrollbar-corner-color": pal["bg"],
+        }
+        return {
+            **super().get_css_variables(),
+            **css_variables(THEME_MAP.get(self._theme_id)),
+            **scrollbar_vars,
+        }
 
     def on_mount(self) -> None:
         """Apply active theme and start with the 'Enhancify Rebranded' boot screen."""
