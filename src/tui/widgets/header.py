@@ -15,6 +15,28 @@ from src.environment import env
 from src.theme import palette
 
 
+def mode_badge_class(mode_label: str) -> str:
+    """Color class for the privilege badge; "" = neutral (pending/unknown)."""
+    if "Root" in mode_label:
+        return "badge-green"
+    if "Rish" in mode_label:
+        return "badge-cyan"
+    if mode_label == "Non-privilege Mode":
+        return "badge-purple"
+    return ""
+
+
+def net_badge_class(online_status: str) -> str:
+    """Color class for the network badge; "" = neutral (pending/unknown)."""
+    if online_status == "Online":
+        return "badge-green"
+    if online_status.startswith("Partial"):
+        return "badge-yellow"
+    if online_status == "Offline":
+        return "badge-red"
+    return ""
+
+
 class CyberHeader(Widget):
     """Custom Header bar for Enhancify."""
 
@@ -61,12 +83,18 @@ class CyberHeader(Widget):
                 hide_when_stacked=True,
             ):
                 # Privilege badge
-                mode_color = pal["accent"] if "Root" in self.mode_label else pal["accent_2"] if "Rish" in self.mode_label else pal["tag"]
-                yield Label(f"⚙️ {self.mode_label}", classes="badge badge-green")
+                yield Label(
+                    f"⚙️ {self.mode_label}",
+                    id="badge-mode",
+                    classes=f"badge {mode_badge_class(self.mode_label)}".strip(),
+                )
 
                 # Network badge
-                net_color = pal["accent"] if self.online_status == "Online" else pal["warning"] if "Partial" in self.online_status else pal["danger"]
-                yield Label(f"🌐 {self.online_status}", classes="badge badge-cyan")
+                yield Label(
+                    f"🌐 {self.online_status}",
+                    id="badge-net",
+                    classes=f"badge {net_badge_class(self.online_status)}".strip(),
+                )
 
                 # Source badge
                 yield Label(f"📦 {source_name}", classes="badge badge-purple")

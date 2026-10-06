@@ -57,6 +57,39 @@ class TestThemeTokens(unittest.TestCase):
         self.assertEqual(before_accent, "#00ff7f")
         self.assertEqual(after_accent, "#bd93f9")
 
+    def test_theme_switch_recolors_nested_scrollbars(self):
+        async def scenario():
+            from textual.widgets import ListView
+
+            set_current_theme("cyber_green")
+            app = EnhancifyApp()
+            async with app.run_test(size=(80, 24)) as pilot:
+                await pilot.pause()
+                app.push_screen("theme_select_screen")
+                await pilot.pause()
+
+                lv = app.screen.query_one(ListView)
+                before = (
+                    lv.styles.scrollbar_color.hex.lower(),
+                    lv.styles.scrollbar_color_hover.hex.lower(),
+                    lv.styles.scrollbar_background.hex.lower(),
+                )
+
+                app.apply_theme("dracula")
+                await pilot.pause()
+
+                after = (
+                    lv.styles.scrollbar_color.hex.lower(),
+                    lv.styles.scrollbar_color_hover.hex.lower(),
+                    lv.styles.scrollbar_background.hex.lower(),
+                )
+                return before, after
+
+        before, after = _run_async(scenario())
+
+        self.assertEqual(before, ("#00ff7f", "#00e5ff", "#0d1117"))
+        self.assertEqual(after, ("#bd93f9", "#ff79c6", "#1e1f29"))
+
     def test_selected_theme_survives_relaunch(self):
         async def scenario():
             set_current_theme("cyber_green")
