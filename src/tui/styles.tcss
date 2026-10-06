@@ -147,11 +147,6 @@ ButtonBar Button {
     overflow-y: auto;
 }
 
-ContentContainer {
-    scrollbar-color: $enh-accent;
-    scrollbar-color-hover: $enh-accent-2;
-}
-
 /* Detail cards (patch info, gmscore/pothelper/specs/token summaries) are
    VerticalScroll: focusable so arrow-key focus-nav can reach them, and
    scrollable so arrows/pageup/pagedown then scroll their content once

@@ -614,5 +614,42 @@ grepped for any prior working-dir name — none found).
   re-ran `python main.py` live: no crash, Rish Mode/Online badges
   render correctly. Full suite: 154/154 passing (+9 subtests).
 
-
-
+- Fixed (same session, second commit on `fix/header-badge-colors`):
+  Every scrollbar except the outer `ContentContainer` one ignored the
+  selected theme. Root cause: Textual's base `Widget` DEFAULT_CSS
+  (`textual/widget.py:292-298`) sets `scrollbar-color`/`-hover`/
+  `-background` etc. from Textual's own `$scrollbar*` design variables,
+  which `EnhancifyApp.get_css_variables()` (`src/tui/app.py`) passed
+  through unchanged from the built-in `textual-dark` theme — only the
+  `ContentContainer` rule in `src/tui/styles.tcss` ever overrode them.
+  Before: every `ListView`, `.detail-card` `VerticalScroll`, the
+  `#log-viewer` `RichLog`, and dialog scrolls in
+  `src/tui/widgets/dialogs.py` all rendered a fixed navy thumb
+  `#003054` (hover `#003c6a`) on a black `#000000` track, on all 8
+  themes — confirmed live, `ListView.styles.scrollbar_color` was
+  `#003054` regardless of `THEME_MAP` selection. Fix:
+  `get_css_variables()` now also re-points `$scrollbar`,
+  `$scrollbar-hover`, `$scrollbar-active`, `$scrollbar-background*`,
+  and `$scrollbar-corner-color` at `palette()["accent"]`/`accent_2`/
+  `bg`, matching what `ContentContainer` already did; the now-redundant
+  `ContentContainer` override was deleted from `styles.tcss` (sole
+  theming authority is `get_css_variables()` now). `apply_theme()`
+  already called `refresh_css()`, so live recoloring needed no new
+  wiring. After: a throwaway `run_test` probe over all 8 `THEME_MAP`
+  ids confirmed a nested `ListView` scrollbar and the outer
+  `ContentContainer` scrollbar both resolve to that theme's `accent`
+  hex, matching each other, on every theme — e.g. cyber_green
+  `#00ff7f`, dracula `#bd93f9`. New regression test
+  `test_theme_switch_recolors_nested_scrollbars` in
+  `tests/test_theme_tokens.py` pins a `ListView` (not
+  `ContentContainer`) scrollbar's thumb/hover/track going from
+  cyber_green `(#00ff7f, #00e5ff, #0d1117)` to dracula `(#bd93f9,
+  #ff79c6, #1e1f29)` on `apply_theme()` — fails before the fix (both
+  tuples come out `(#003054, #003c6a, #000000)`). Full suite: 155/155
+  passing (+9 subtests). Not re-verified with a full interactive
+  on-device walkthrough this session (device env here lacks a usable
+  interactive TTY for `python main.py`); the `run_test` probe exercises
+  real Textual CSS resolution against the same `Widget` DEFAULT_CSS the
+  live app uses, so the colors above are what the live app renders —
+  user should still eyeball it on a real terminal before merge per the
+  branch handoff step.
