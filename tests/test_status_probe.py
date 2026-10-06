@@ -91,9 +91,12 @@ class TestStatusProbe(unittest.TestCase):
 
                     # Still pending: gate is unset.
                     header_text = str(
-                        app.screen.query_one(CyberHeader).query_one(".badge-green", Label).render()
+                        app.screen.query_one(CyberHeader).query_one("#badge-mode", Label).render()
                     )
                     self.assertIn("Checking...", header_text)
+                    mode_badge = app.screen.query_one(CyberHeader).query_one("#badge-mode", Label)
+                    for cls in ("badge-green", "badge-cyan", "badge-purple"):
+                        self.assertFalse(mode_badge.has_class(cls))
                     self.assertFalse(
                         app.screen.query_one("#btn-unmount", Button).display
                     )
@@ -104,7 +107,7 @@ class TestStatusProbe(unittest.TestCase):
                         try:
                             text = str(
                                 app.screen.query_one(CyberHeader)
-                                .query_one(".badge-green", Label)
+                                .query_one("#badge-mode", Label)
                                 .render()
                             )
                         except Exception:
@@ -117,6 +120,8 @@ class TestStatusProbe(unittest.TestCase):
                     self.assertTrue(
                         app.screen.query_one("#btn-unmount", Button).display
                     )
+                    mode_badge = app.screen.query_one(CyberHeader).query_one("#badge-mode", Label)
+                    self.assertTrue(mode_badge.has_class("badge-green"))
                     status_bar_text = str(
                         app.screen.query_one(CyberStatusBar)
                         .query_one(".line-mode", Label)
@@ -124,9 +129,12 @@ class TestStatusProbe(unittest.TestCase):
                     )
                     self.assertIn("Root Mode", status_bar_text)
                     net_text = str(
-                        app.screen.query_one(CyberHeader).query_one(".badge-cyan", Label).render()
+                        app.screen.query_one(CyberHeader).query_one("#badge-net", Label).render()
                     )
                     self.assertIn("Online", net_text)
+                    net_badge = app.screen.query_one(CyberHeader).query_one("#badge-net", Label)
+                    self.assertTrue(net_badge.has_class("badge-green"))
+                    self.assertFalse(net_badge.has_class("badge-cyan"))
 
         _run_async(scenario())
 
@@ -199,6 +207,35 @@ class TestStatusProbe(unittest.TestCase):
             _run_async(scenario())
         finally:
             apk_path.unlink(missing_ok=True)
+
+
+class TestHeaderBadgeClasses(unittest.TestCase):
+    def test_mode_badge_class(self):
+        from src.tui.widgets.header import mode_badge_class
+
+        cases = [
+            ("Root Mode", "badge-green"),
+            ("Rish Mode", "badge-cyan"),
+            ("Non-privilege Mode", "badge-purple"),
+            ("Checking...", ""),
+        ]
+        for label, expected in cases:
+            with self.subTest(label=label):
+                self.assertEqual(mode_badge_class(label), expected)
+
+    def test_net_badge_class(self):
+        from src.tui.widgets.header import net_badge_class
+
+        cases = [
+            ("Online", "badge-green"),
+            ("Partial (Apkmirror Down)", "badge-yellow"),
+            ("Partial (Github Down)", "badge-yellow"),
+            ("Offline", "badge-red"),
+            ("Checking...", ""),
+        ]
+        for status, expected in cases:
+            with self.subTest(status=status):
+                self.assertEqual(net_badge_class(status), expected)
 
 
 if __name__ == "__main__":

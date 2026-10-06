@@ -573,21 +573,46 @@ grepped for any prior working-dir name — none found).
     `ImportError` on the new constant, since nothing partially existed).
     Full suite: 152/152 passing.
 - Candidates for next session (not yet started), in priority order:
-  1. **`CyberHeader` badge colors are dead code** — `mode_color`/
-     `net_color` (`src/tui/widgets/header.py:64,68`) are computed from
-     real privilege/network state but never applied to the `Label`s;
-     badges always render via static `badge-green`/`badge-cyan` CSS
-     classes regardless of state. `CyberStatusBar` applies its computed
-     color correctly. Either wire the header badges up the same way, or
-     delete the dead computation — needs a decision first.
-  2. **Root-device Unmount-button path unverified live** — only a
+  1. **Root-device Unmount-button path unverified live** — only a
      non-root Rish device was available this session;
      `privileges_resolved()` -> `unmount.display = priv[0]` has mocked
      test coverage only. Needs a smoke pass on a rooted device.
-  3. **30s network-staleness tradeoff** — `check_network()`'s TTL means
+  2. **30s network-staleness tradeoff** — `check_network()`'s TTL means
      a screen opened right after a connectivity change can show a stale
      Online/Offline badge for up to 30s. By-design from this session,
      not a bug; worth a product call on whether polling is good enough
      or a push-based listener is warranted.
+- Fixed (this session): `CyberHeader` badge colors were dead code —
+  `mode_color`/`net_color` (`src/tui/widgets/header.py:64,68` before the
+  fix) were computed from real privilege/network state but never applied
+  to the `Label`s; the mode badge always rendered `badge-green` and the
+  network badge always `badge-cyan` regardless of actual state. Replaced
+  with two pure functions, `mode_badge_class(mode_label)` and
+  `net_badge_class(online_status)`, that map state strings to CSS badge
+  classes (`badge-green`/`badge-cyan`/`badge-purple`/`badge-yellow`/new
+  `badge-red`/`""` neutral for "Checking..."); `compose()` applies the
+  class and tags the Labels `#badge-mode`/`#badge-net` so
+  `update_status()`'s existing `refresh(recompose=True)` re-evaluates the
+  mapping live on every state change (no extra wiring needed). Added
+  `.badge-red` to `src/tui/styles.tcss` (same shape as the other badge
+  classes, `$enh-danger` border/color — token already existed, just
+  unused by any class). `tests/test_status_probe.py`'s existing
+  privilege-probe test now selects badges by `#badge-mode`/`#badge-net`
+  id (the old `.badge-green`/`.badge-cyan` class selectors broke, since
+  those classes are now conditional) and asserts the neutral/resolved
+  class transition; new `TestHeaderBadgeClasses` pins every real label →
+  class mapping via `subTest`. Verified live on-device (SDK 37,
+  non-root Rish, `~/EnhanciPy`): before, `python main.py` always showed
+  the mode badge in accent-green and network badge in accent-2-cyan
+  regardless of state (dead code, visually unnoticeable since the
+  default colors happened to look plausible); after, confirmed via a
+  throwaway `run_test` smoke script comparing `Label.styles.color`
+  against `palette()` that Rish Mode renders `badge-cyan`
+  (`$enh-accent-2`), Partial network renders `badge-yellow`
+  (`$enh-warning`), and Offline renders the new `badge-red`
+  (`$enh-danger`) — all previously impossible outcomes. Real device
+  re-ran `python main.py` live: no crash, Rish Mode/Online badges
+  render correctly. Full suite: 154/154 passing (+9 subtests).
+
 
 
