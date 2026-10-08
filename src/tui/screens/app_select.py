@@ -23,6 +23,7 @@ from src.antisplit import antisplit_mgr
 from src.apkmirror import apkmirror_scraper
 from src.assets import AssetReleaseInfo, assets_mgr
 from src.config import config
+from src.sources import sources_mgr
 from src.theme import palette
 from src.tui.screens.base import BaseScreen
 from src.tui.screens.file_picker import FilePickerScreen
@@ -90,13 +91,17 @@ class AppSelectScreen(BaseScreen):
         try:
             rel = assets_mgr.fetch_source_release_info(self.active_source)
             if not rel:
+                if sources_mgr.get_local_source(self.active_source):
+                    msg = (
+                        f"Imported patch file for {self.active_source} or a compatible CLI is missing.\n\n"
+                        "Re-import it from Patch App → Import Patch File [I]."
+                    )
+                else:
+                    msg = f"Failed to fetch release info for {self.active_source}!"
                 self.app.call_from_thread(modal.safe_dismiss)
                 self.app.call_from_thread(
                     self.app.push_screen,
-                    MessageDialog(
-                        "Error",
-                        f"Failed to fetch release info for {self.active_source}!",
-                    ),
+                    MessageDialog("Error", msg),
                 )
                 return
 
