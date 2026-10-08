@@ -10,6 +10,8 @@ from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Label, ListItem, ListView
 
+from src.assets import assets_mgr
+from src.config import DEFAULT_CONFIG, config
 from src.sources import SourceInfo, sources_mgr
 from src.tui.screens.base import BaseScreen
 from src.theme import palette
@@ -30,7 +32,7 @@ class CustomSourcesScreen(BaseScreen):
     def compose_content(self) -> ComposeResult:
         with Vertical(classes="card list-card"):
             yield Label("➕ Custom Sources Management", classes="card-title")
-            yield Label("Add or manage custom ReVanced / Morphe patch repositories:", classes="card-desc")
+            yield Label("Add or manage custom ReVanced / Morphe patch repositories and imported patch files:", classes="card-desc")
 
             with ButtonBar():
                 yield Button("➕ Add New Source [A]", id="btn-add", classes="btn-primary")
@@ -48,20 +50,27 @@ class CustomSourcesScreen(BaseScreen):
         c_list.clear()
 
         all_sources = sources_mgr.get_all_sources()
-        custom_sources = [s for s in all_sources if s.is_custom]
+        custom_sources = [s for s in all_sources if s.is_custom or s.is_local]
 
         if not custom_sources:
-            c_list.append(ListItem(Label(Text("No custom sources added yet. Click 'Add New Source' above.", style="dim"))))
+            c_list.append(ListItem(Label(Text("No custom or imported sources yet. Click 'Add New Source' or use Import Patch File on the source list.", style="dim"))))
             return
 
         pal = palette()
         for idx, s in enumerate(custom_sources):
             txt = Text()
-            txt.append("📦 ", style=f"bold {pal['tag']}")
-            txt.append(f"{s.source:<20}", style=f"bold {pal['text']}")
-            txt.append(f" ({s.repository})", style=pal['accent_2'])
-            if s.json_url:
-                txt.append(" [JSON API]", style=pal['accent'])
+            if s.is_local:
+                txt.append("📂 ", style=f"bold {pal['tag']}")
+                txt.append(f"{s.source:<20}", style=f"bold {pal['text']}")
+                bv = s.bundle_version if s.bundle_version.startswith("v") else f"v{s.bundle_version}"
+                txt.append(f" ({bv})", style=pal['accent_2'])
+                txt.append(" [LOCAL]", style=f"bold {pal['tag']}")
+            else:
+                txt.append("📦 ", style=f"bold {pal['tag']}")
+                txt.append(f"{s.source:<20}", style=f"bold {pal['text']}")
+                txt.append(f" ({s.repository})", style=pal['accent_2'])
+                if s.json_url:
+                    txt.append(" [JSON API]", style=pal['accent'])
 
             item = ListItem(Label(txt))
             item.source_idx = idx
@@ -72,22 +81,39 @@ class CustomSourcesScreen(BaseScreen):
         if idx is None and 0 <= event.index:
             idx = event.index
         if idx is not None:
-            custom_sources = [s for s in sources_mgr.get_all_sources() if s.is_custom]
+            custom_sources = [s for s in sources_mgr.get_all_sources() if s.is_custom or s.is_local]
             if 0 <= idx < len(custom_sources):
                 self.prompt_source_actions(custom_sources[idx])
 
     def prompt_source_actions(self, source: SourceInfo) -> None:
         """Show Edit / Delete confirmation."""
         def handle_confirm(delete_it: bool) -> None:
-            if delete_it:
+            if not delete_it:
+                return
+            if source.is_local:
+                ok, msg = sources_mgr.delete_local_source(source.source)
+                assets_mgr.remove_local_bundle(source.source)
+                if config.get("SOURCE") == source.source:
+                    config.set("SOURCE", DEFAULT_CONFIG["SOURCE"])
+                    self.app.multi_sources = [DEFAULT_CONFIG["SOURCE"]]
+            else:
                 ok, msg = sources_mgr.delete_custom_source(source.source)
-                self.populate_custom_sources()
-                self.app.push_screen(MessageDialog("Deleted", msg))
+            self.populate_custom_sources()
+            self.app.push_screen(MessageDialog("Deleted", msg))
+
+        if source.is_local:
+            message = (
+                f"Imported patch file\nVersion: {source.bundle_version}\n"
+                f"Patcher: {source.patcher_version or 'unknown'}\n\n"
+                "Do you want to DELETE this local source and its files?"
+            )
+        else:
+            message = f"Repository: {source.repository}\nJSON URL: {source.json_url or 'None'}\n\nDo you want to DELETE this custom source?"
 
         self.app.push_screen(
             ConfirmDialog(
                 title=f"Manage {source.source}",
-                message=f"Repository: {source.repository}\nJSON URL: {source.json_url or 'None'}\n\nDo you want to DELETE this custom source?",
+                message=message,
                 yes_label="Delete",
                 no_label="Cancel",
             ),
