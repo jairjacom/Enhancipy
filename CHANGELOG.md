@@ -1,5 +1,21 @@
 # EnhanciPy Changelog
 
+## [v1.4.0] — import your own patch files
+
+### Added
+
+- **Import Patch File.** On the source list, the new "Import Patch File"
+  button (or `I`) lets you pick a `.mpp` patch bundle from your device,
+  name it, and use it like any other source — choose an app, version and
+  patches, then patch. Imported sources are tagged `[LOCAL]` and are kept
+  between sessions.
+- **The right CLI is picked automatically.** The patcher version the
+  bundle was built for is compared with the CLIs you already have. If none
+  fits, the latest Morphe CLI is downloaded; if that still doesn't match,
+  you are warned and asked before importing.
+- **Imported sources can be removed** from Custom Sources, which also
+  deletes their stored files.
+
 ## [v1.3.8] — status badges and scrollbars now match your theme
 
 ### Fixed
