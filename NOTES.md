@@ -653,3 +653,53 @@ grepped for any prior working-dir name — none found).
   live app uses, so the colors above are what the live app renders —
   user should still eyeball it on a real terminal before merge per the
   branch handoff step.
+- **Added (`feat/import-patch-file`): Import Patch File `.mpp` as a persistent
+  local source.** Source Select → "📂 Import Patch File [I]" → file picker
+  (`.mpp` only) → name prompt (prefilled from manifest `Name`) → stored as a
+  `[LOCAL]` source in `local_sources.json` (gitignored; schema
+  `[{source, version, patcher_version}]`) with the bundle copied to
+  `assets/<name>/Patches-v<Version>.mpp`. Removal: Custom Sources → select →
+  Delete (also removes `assets/<name>/`; resets `SOURCE` to `Anddea` if it
+  was active).
+  - Before: bundles only arrived via GitHub release download or a Bundle
+    Patcher JSON; no UI accepted a local `.mpp`.
+  - CLI choice: `AssetsManager.select_cli_for_bundle` compares the manifest
+    `Patcher-Version` with each `assets/CLI-*.jar`'s
+    `app/morphe/patcher/version.properties` (cached per path/size/mtime;
+    ~0.5 s cold on this device for 2 jars). Rule: same major, CLI >=
+    bundle, prerelease suffix ignored → pick highest compatible. Else adopt
+    from `cli_cache/`, else download latest morphe-cli, else warn
+    ("CLI Mismatch" confirm). `PatchProgressScreen` pins the same selection
+    for local sources so the CLI that parsed the patch list is the one that
+    patches. Remote sources unchanged (newest-mtime CLI).
+  - The compat rule rests on one earlier observed success (1.14.1 bundle on
+    1.15.1-dev.7 CLI). If a compatible-rated CLI fails to patch, tighten
+    `cli_compatible` to exact `major.minor`.
+  - Device verification (Termux, real files; driven via scripts + Textual
+    `run_test`, not an interactive TTY, so the file-picker click-through
+    and the typed name prompt were not exercised by hand):
+    - `~/storage/downloads/patches-1.0.0-dev.4.mpp` → manifest `Jair
+      Patches` / `1.0.0-dev.4` / `1.15.1`; selected `CLI-v1.18.1-dev.5.jar`
+      (patcher `1.15.1-dev.7`), compatible, no mismatch dialog.
+    - Staged to `assets/Jair Patches/Patches-v1.0.0-dev.4.mpp`;
+      `fetch_source_release_info` returned offline info
+      (`v1.0.0-dev.4`/`mpp`/`v1.18.1-dev.5`); `load_or_fetch_patches_json`
+      ran "Parsing JSON file ... from CLI Output" in ~6 s and wrote
+      `Patches-v1.0.0-dev.4.json` (1 app: `bitpit.launcher`; patches
+      `Disable telemetry`, `Unlock pro`).
+    - `PatcherEngine.run_patch` with that bundle + CLI on
+      `apps/Niagara Launcher ‧ Home Screen/1.16.28.apk` (patch `Disable
+      telemetry`): "Patching completed successfully", output
+      `1.16.28-Jair Patches.apk` (13.9 MB; name with a space is fine).
+      Not installed (install path unchanged).
+    - Source list rendered `Jair Patches (v1.0.0-dev.4) [LOCAL]`; `i` opens
+      the file picker; Custom Sources → select → confirm text shows
+      version/patcher → Delete: `assets/Jair Patches/` gone, `SOURCE` back to
+      `Anddea`, `local_sources.json` empty.
+    - CLI Mismatch dialog rendered with a stub 1.15.0-dev.3 jar ("patcher
+      1.15.1 ... has patcher 1.15.0-dev.3"); Cancel staged nothing.
+      **Not done:** the airplane-mode / cli_cache-moved download-fallback
+      run (needs real network toggling); the download path is covered only
+      by code review.
+  - Full suite: 173 passed (18 new in `tests/test_local_bundle_import.py`).
+  - Scope: `.mpp` only. `.rvp`/`.jar` imports are not supported.

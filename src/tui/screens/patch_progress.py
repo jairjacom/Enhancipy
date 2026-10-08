@@ -19,6 +19,7 @@ from src.config import config
 from src.environment import env
 from src.installer import CONFLICT_SIGNATURE_MISMATCH, CONFLICT_VERSION_DOWNGRADE, InstallResult, app_installer, rish_export_name
 from src.patcher import PatchExecutionConfig, patcher_engine
+from src.sources import sources_mgr
 from src.theme import palette
 from src.tui.screens.base import BaseScreen
 from src.tui.screens.main_menu import MainMenuScreen
@@ -90,7 +91,13 @@ class PatchProgressScreen(BaseScreen):
         # Find CLI and Patches. Multiple versions can accumulate on disk
         # across updates; the most recently downloaded one is the current
         # release, so pick by mtime rather than an arbitrary glob order.
-        cli_jars = list(assets_mgr.assets_dir.glob("CLI-*.jar"))
+        local_src = sources_mgr.get_local_source(source_name)
+        if local_src:
+            # Imported bundle: use the same CLI that generated its patch list.
+            pinned, _ = assets_mgr.select_cli_for_bundle(local_src.patcher_version)
+            cli_jars = [pinned] if pinned else []
+        else:
+            cli_jars = list(assets_mgr.assets_dir.glob("CLI-*.jar"))
         src_dir = assets_mgr.assets_dir / source_name
         patch_files = list(src_dir.glob("Patches-*.*"))
         patch_bins = [p for p in patch_files if p.suffix.lower() in [".jar", ".rvp", ".mpp"]]

@@ -20,6 +20,16 @@ from src.environment import env
 USER_AGENT_GITHUB = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36 EdgA/142.0.0.0"
 
 
+LOCAL_SOURCE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$")
+RESERVED_SOURCE_NAMES = {"morphe-data"}  # the Morphe CLI creates assets/morphe-data
+
+
+def sanitize_local_source_name(raw: str) -> str:
+    """Turn a manifest name into a valid local source name."""
+    cleaned = re.sub(r"[^A-Za-z0-9 ._-]", "-", raw).strip(" ._-")[:40]
+    return cleaned or "Imported"
+
+
 @dataclass
 class SourceInfo:
     source: str
@@ -29,6 +39,9 @@ class SourceInfo:
     gitlab_id: Optional[str] = None
     is_custom: bool = False
     latest_tag: str = ""
+    is_local: bool = False
+    bundle_version: str = ""
+    patcher_version: str = ""
     prerelease_tag: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -52,6 +65,7 @@ class SourcesManager:
         self.workspace_dir = workspace_dir or Path(__file__).resolve().parent.parent
         self.sources_file = self.workspace_dir / "sources.json"
         self.user_sources_file = self.workspace_dir / "user_sources.json"
+        self.local_sources_file = self.workspace_dir / "local_sources.json"
         self.tag_file = self.workspace_dir / "tag.json"
         self._ensure_files()
 
@@ -111,6 +125,23 @@ class SourcesManager:
                             version=api.get("version"),
                             gitlab_id=item.get("gitlab"),
                             is_custom=True,
+                        )
+                    )
+            except Exception:
+                pass
+
+        # Load imported local sources
+        if self.local_sources_file.exists():
+            try:
+                for item in json.loads(self.local_sources_file.read_text(encoding="utf-8")):
+                    sources.append(
+                        SourceInfo(
+                            source=item["source"],
+                            repository="",
+                            is_custom=False,
+                            is_local=True,
+                            bundle_version=item["version"],
+                            patcher_version=item.get("patcher_version", ""),
                         )
                     )
             except Exception:
@@ -200,6 +231,52 @@ class SourcesManager:
             
             new_list = [entry for entry in custom_sources if entry.get("source") != name]
             self.user_sources_file.write_text(json.dumps(new_list, indent=2), encoding="utf-8")
+            return True, f"Source '{name}' deleted successfully!"
+        except Exception as e:
+            return False, f"Failed to delete source: {e}"
+
+    def get_local_source(self, name: str) -> Optional[SourceInfo]:
+        """Find an imported local source by name (case-insensitive)."""
+        low = name.lower()
+        for s in self.get_all_sources():
+            if s.is_local and s.source.lower() == low:
+                return s
+        return None
+
+    def validate_local_source_name(self, name: str) -> Optional[str]:
+        """Return an error message if `name` cannot be used for a local source."""
+        if not LOCAL_SOURCE_NAME_RE.match(name):
+            return "Source name may only use letters, numbers, spaces, '.', '_' and '-' (max 40 characters)."
+        if name.lower() in RESERVED_SOURCE_NAMES:
+            return f"'{name}' is a reserved name. Pick another name."
+        for s in self.get_all_sources():
+            if not s.is_local and s.source.lower() == name.lower():
+                return f"Source '{name}' already exists as a remote source. Pick another name."
+        return None
+
+    def _read_local_entries(self) -> List[Dict[str, Any]]:
+        if not self.local_sources_file.exists():
+            return []
+        return json.loads(self.local_sources_file.read_text(encoding="utf-8"))
+
+    def save_local_source(self, name: str, version: str, patcher_version: str) -> Tuple[bool, str]:
+        """Add or replace (case-insensitive) an imported local source."""
+        err = self.validate_local_source_name(name)
+        if err:
+            return False, err
+        try:
+            entries = [e for e in self._read_local_entries() if str(e.get("source", "")).lower() != name.lower()]
+            entries.append({"source": name, "version": version, "patcher_version": patcher_version})
+            self.local_sources_file.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+            return True, f"Local source '{name}' saved."
+        except Exception as e:
+            return False, f"Failed to save local source: {e}"
+
+    def delete_local_source(self, name: str) -> Tuple[bool, str]:
+        """Delete an imported local source entry."""
+        try:
+            new_list = [e for e in self._read_local_entries() if e.get("source") != name]
+            self.local_sources_file.write_text(json.dumps(new_list, indent=2), encoding="utf-8")
             return True, f"Source '{name}' deleted successfully!"
         except Exception as e:
             return False, f"Failed to delete source: {e}"
@@ -399,7 +476,7 @@ class SourcesManager:
         If specific_source is provided, only that source is updated;
         otherwise all sources (or current source if unauthenticated).
         """
-        sources = self.get_all_sources()
+        sources = [s for s in self.get_all_sources() if not s.is_local]
         has_token = bool(config.get_github_token())
         current_src_name = config.get("SOURCE", "Anddea")
 

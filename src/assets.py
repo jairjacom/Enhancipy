@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -47,6 +48,28 @@ class AssetReleaseInfo:
     json_url: str = ""
     changelog: str = ""
     extra_assets: Dict[str, Tuple[str, int]] = field(default_factory=dict)
+
+
+@dataclass
+class BundleManifest:
+    name: str
+    version: str
+    patcher_version: str
+
+
+def _version_triple(v: str) -> Optional[Tuple[int, int, int]]:
+    """Parse leading major.minor[.patch]; prerelease suffixes are ignored."""
+    m = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?", v or "")
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+
+
+def cli_compatible(cli_pv: str, bundle_pv: str) -> bool:
+    """Same major patcher version and CLI >= bundle."""
+    cli = _version_triple(cli_pv)
+    bundle = _version_triple(bundle_pv)
+    return cli is not None and bundle is not None and cli[0] == bundle[0] and cli >= bundle
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +235,7 @@ class AssetsManager:
         self.cli_cache_dir = self.workspace_dir / "cli_cache"
         self.storage_dir = env.storage_dir
         self._ensure_dirs()
+        self._patcher_version_cache: Dict[Tuple[str, int, float], str] = {}
 
     def _ensure_dirs(self) -> None:
         self.assets_dir.mkdir(parents=True, exist_ok=True)
@@ -364,8 +388,189 @@ class AssetsManager:
             pass
         return None
 
+    def fetch_latest_cli_release(
+        self, cli_repo: str, use_prerelease: bool
+    ) -> Optional[Tuple[str, str, int]]:
+        """Fetch the latest CLI release as (tag, jar_url, jar_size).
+
+        ``jar_url`` is "" when the release has no jar. Returns None when the
+        request fails or no release is found.
+        """
+        if use_prerelease:
+            cli_api_url = f"https://api.github.com/repos/{cli_repo}/releases?per_page=30"
+        else:
+            cli_api_url = f"https://api.github.com/repos/{cli_repo}/releases/latest"
+
+        try:
+            r_cli = requests.get(cli_api_url, headers=self._get_github_headers(), timeout=8)
+            if r_cli.status_code != 200:
+                return None
+            cli_obj = self._select_github_release(r_cli.json(), use_prerelease)
+            if not cli_obj:
+                return None
+            tag = cli_obj.get("tag_name", "") or ""
+            if not tag:
+                return None
+            url = ""
+            size = 0
+            for asset in cli_obj.get("assets", []):
+                name = asset.get("name", "")
+                if name.endswith(".jar") and not name.endswith(".asc") and not name.endswith("-sources.jar"):
+                    url = asset.get("browser_download_url", "")
+                    size = int(asset.get("size", 0))
+                    break
+            return tag, url, size
+        except Exception:
+            return None
+
+    # --- Local (imported) patch bundles ---
+
+    def read_bundle_manifest(self, path: Path) -> BundleManifest:
+        """Read Name/Version/Patcher-Version from a bundle's JAR manifest."""
+        try:
+            with zipfile.ZipFile(path) as zf:
+                try:
+                    raw = zf.read("META-INF/MANIFEST.MF")
+                except KeyError:
+                    raise ValueError("Patch file has no manifest (META-INF/MANIFEST.MF).")
+        except (zipfile.BadZipFile, OSError):
+            raise ValueError("Not a valid patch file (not a zip archive).")
+
+        attrs: Dict[str, str] = {}
+        last = ""
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            if line.startswith(" "):
+                if last:
+                    attrs[last] += line[1:]
+                continue
+            key, sep, value = line.partition(": ")
+            if sep:
+                attrs[key] = value
+                last = key
+            else:
+                last = ""
+        version = attrs.get("Version", "").strip()
+        if not version:
+            raise ValueError("Patch file manifest has no Version.")
+        return BundleManifest(
+            name=attrs.get("Name", "").strip() or path.stem,
+            version=version,
+            patcher_version=attrs.get("Patcher-Version", "").strip(),
+        )
+
+    def cli_patcher_version(self, jar: Path) -> str:
+        """Patcher version embedded in a Morphe CLI jar ("" if unreadable). Cached."""
+        try:
+            st = jar.stat()
+            key = (str(jar), st.st_size, st.st_mtime)
+        except OSError:
+            return ""
+        cached = self._patcher_version_cache.get(key)
+        if cached is not None:
+            return cached
+        result = ""
+        try:
+            with zipfile.ZipFile(jar) as zf:
+                text = zf.read("app/morphe/patcher/version.properties").decode("utf-8", errors="replace")
+            for line in text.splitlines():
+                if line.startswith("version="):
+                    result = line[len("version="):].strip()
+                    break
+        except Exception:
+            result = ""
+        self._patcher_version_cache[key] = result
+        return result
+
+    def select_cli_for_bundle(self, bundle_patcher_version: str) -> Tuple[Optional[Path], bool]:
+        """Pick the CLI jar for a bundle: (jar, compatible). (None, False) if no usable CLI."""
+        cands: List[Tuple[Path, str, Tuple[int, int, int], float]] = []
+        for jar in self.assets_dir.glob("CLI-*.jar"):
+            pv = self.cli_patcher_version(jar)
+            triple = _version_triple(pv)
+            if triple is None:
+                continue
+            try:
+                mtime = jar.stat().st_mtime
+            except OSError:
+                continue
+            cands.append((jar, pv, triple, mtime))
+        if not cands:
+            return None, False
+        if not bundle_patcher_version:
+            return max(cands, key=lambda c: c[3])[0], True
+        compatible = [c for c in cands if cli_compatible(c[1], bundle_patcher_version)]
+        if compatible:
+            return max(compatible, key=lambda c: (c[2], c[3]))[0], True
+        return max(cands, key=lambda c: (c[2], c[3]))[0], False
+
+    def adopt_cached_cli_for_bundle(self, bundle_patcher_version: str) -> Optional[Path]:
+        """Copy a compatible CLI from cli_cache/ into assets/. Returns its assets path."""
+        best: Optional[Tuple[Tuple[int, int, int], Path]] = None
+        for jar in self.cli_cache_dir.glob("*/CLI-*.jar"):
+            pv = self.cli_patcher_version(jar)
+            if not cli_compatible(pv, bundle_patcher_version):
+                continue
+            triple = _version_triple(pv)
+            if triple is not None and (best is None or triple > best[0]):
+                best = (triple, jar)
+        if best is None:
+            return None
+        target = self.assets_dir / best[1].name
+        if not target.exists():
+            shutil.copy2(best[1], target)
+        return target
+
+    def stage_local_bundle(self, src: Path, source_name: str, manifest: BundleManifest) -> Path:
+        """Copy an imported bundle to assets/<source>/Patches-<tag>.mpp, dropping old bundles."""
+        dest_dir = self.assets_dir / source_name
+        if src.resolve().parent == dest_dir.resolve():
+            raise ValueError("Pick a patch file outside the EnhanciPy assets folder.")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for old in dest_dir.glob("Patches-*"):
+            old.unlink(missing_ok=True)
+        tag = manifest.version if manifest.version.startswith("v") else f"v{manifest.version}"
+        dest = dest_dir / f"Patches-{tag}.mpp"
+        # copyfile (not copy2): fresh mtime keeps newest-mtime selection correct.
+        shutil.copyfile(src, dest)
+        return dest
+
+    def remove_local_bundle(self, source_name: str) -> None:
+        """Delete assets/<source>/ of an imported source."""
+        if not source_name or "/" in source_name:
+            return
+        shutil.rmtree(self.assets_dir / source_name, ignore_errors=True)
+
+    def local_release_info(self, source_name: str) -> Optional[AssetReleaseInfo]:
+        """Offline release info for an imported source (no network, no downloads)."""
+        local = sources_mgr.get_local_source(source_name)
+        if not local:
+            return None
+        bundles = sorted(
+            (self.assets_dir / source_name).glob("Patches-*.mpp"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not bundles:
+            return None
+        cli, _ = self.select_cli_for_bundle(local.patcher_version)
+        if cli is None:
+            return None
+        return AssetReleaseInfo(
+            source_name=source_name,
+            patches_version=bundles[0].stem.removeprefix("Patches-"),
+            patches_ext="mpp",
+            patches_url="",
+            patches_size=0,
+            cli_version=cli.stem.removeprefix("CLI-"),
+            cli_url="",
+            cli_size=0,
+        )
+
     def fetch_source_release_info(self, source_name: str) -> Optional[AssetReleaseInfo]:
         """Fetch patch and CLI release metadata from GitHub or custom API."""
+        if sources_mgr.get_local_source(source_name):
+            return self.local_release_info(source_name)
+
         src_info = sources_mgr.get_source(source_name)
         if not src_info:
             return None
@@ -461,30 +666,12 @@ class AssetsManager:
 
         # 2. Fetch CLI info (channel-aware: filter prereleases when enabled)
         cli_repo = self.resolve_cli_repo(patches_ext, source_name)
-        if use_prerelease:
-            cli_api_url = f"https://api.github.com/repos/{cli_repo}/releases?per_page=30"
-        else:
-            cli_api_url = f"https://api.github.com/repos/{cli_repo}/releases/latest"
-
         cli_ver = ""
         cli_url = ""
         cli_size = 0
-
-        try:
-            r_cli = requests.get(cli_api_url, headers=headers, timeout=8)
-            if r_cli.status_code == 200:
-                data_cli = r_cli.json()
-                cli_obj = self._select_github_release(data_cli, use_prerelease)
-                if cli_obj:
-                    cli_ver = cli_obj.get("tag_name", "") or ""
-                    for asset in cli_obj.get("assets", []):
-                        name = asset.get("name", "")
-                        if name.endswith(".jar") and not name.endswith(".asc") and not name.endswith("-sources.jar"):
-                            cli_url = asset.get("browser_download_url", "")
-                            cli_size = int(asset.get("size", 0))
-                            break
-        except Exception:
-            pass
+        cli_rel = self.fetch_latest_cli_release(cli_repo, use_prerelease)
+        if cli_rel:
+            cli_ver, cli_url, cli_size = cli_rel
 
         if not patches_ver or not cli_ver:
             return None
