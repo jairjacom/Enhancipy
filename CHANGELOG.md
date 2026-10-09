@@ -1,5 +1,29 @@
 # EnhanciPy Changelog
 
+## [v1.5.0] — easier-to-read text, thin scrollbars, new themes
+
+### Added
+
+- **Five new themes:** Kanagawa Dragon, Gotham, Moonfly, Jellybeans and
+  Tokyo Night.
+- **Swipe sideways panels.** Panels with wide content that can't wrap now
+  move sideways when you drag them up or down, just like vertical panels
+  follow your finger. At the edge, the swipe scrolls the page again.
+
+### Fixed
+
+- **Secondary text (hints, placeholders, unselected markers, waiting
+  labels) was too close to the panel background** and hard to read. Every
+  theme now uses a clearly readable shade.
+- **Scrollbars were thick and blended into the background.** They are now
+  a single thin line in the theme's colors, with a dot at each end instead
+  of arrows.
+
+### Removed
+
+- The Dracula Vampire, Nordic Frost and Catppuccin Mocha themes. If one of
+  them was selected, the app falls back to OLED Midnight.
+
 ## [v1.4.0] — import your own patch files
 
 ### Added
