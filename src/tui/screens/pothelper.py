@@ -10,9 +10,10 @@ from typing import Any, Dict, Optional
 
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Label
 
+from src.tui.widgets.pan_scroll import PanScroll
 from src.features import pothelper_mgr
 from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import DownloadProgressModal, MessageDialog, ProgressModal
@@ -56,7 +57,7 @@ class PotHelperScreen(BaseScreen):
                 )
                 yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-        with VerticalScroll(classes="card detail-card"):
+        with PanScroll(classes="card detail-card"):
             yield Label("📋 Release Changelog", classes="card-title")
             yield Label(
                 "Tap 'Fetch Release Info' to load the latest PotHelper release.",

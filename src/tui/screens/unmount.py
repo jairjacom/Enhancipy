@@ -48,7 +48,7 @@ class UnmountScreen(BaseScreen):
         mounted_pkgs = [l.replace(".apk", "").strip() for l in out.splitlines() if l.strip().endswith(".apk")]
 
         if not mounted_pkgs:
-            m_list.append(ListItem(Label(Text("No mounted applications found in /data/local/tmp/enhancify.", style="dim"))))
+            m_list.append(ListItem(Label(Text("No mounted applications found in /data/local/tmp/enhancify.", style=palette()["muted"]))))
             return
 
         pal = palette()

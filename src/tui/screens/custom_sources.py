@@ -53,7 +53,7 @@ class CustomSourcesScreen(BaseScreen):
         custom_sources = [s for s in all_sources if s.is_custom or s.is_local]
 
         if not custom_sources:
-            c_list.append(ListItem(Label(Text("No custom or imported sources yet. Click 'Add New Source' or use Import Patch File on the source list.", style="dim"))))
+            c_list.append(ListItem(Label(Text("No custom or imported sources yet. Click 'Add New Source' or use Import Patch File on the source list.", style=palette()["muted"]))))
             return
 
         pal = palette()

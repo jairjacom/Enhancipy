@@ -51,7 +51,7 @@ class ThemeSelectScreen(BaseScreen):
             if is_active:
                 txt.append("● ", style=f"bold {th.accent}")
             else:
-                txt.append("○ ", style="dim")
+                txt.append("○ ", style=pal["muted"])
 
             # Color palette swatches
             for color in th.preview_palette:

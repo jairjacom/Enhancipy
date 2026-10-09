@@ -28,17 +28,44 @@ class ThemeInfo:
     row_focus_fg: str     # ListItem:focus foreground
     log_bg: str           # #log-viewer background
     log_fg: str           # #log-viewer foreground
+    muted: str            # secondary/help text; >=7:1 contrast on surface, surface_2, bg
     preview_palette: List[str]
 
 
 STATIC_TOKENS: Dict[str, str] = {
-    "muted": "#8b949e",     # secondary/help text
     "danger": "#ff4444",    # errors, delete actions
     "warning": "#ffd700",   # tags, cautions
     "tag": "#d2a8ff",       # custom-source / meta tags
     "on_dark": "#ffffff",   # text on strong accent fills
     "success": "#2ea043",   # confirm/allow actions (e.g. downgrade-conflict Yes)
 }
+
+
+def relative_luminance(hex_color: str) -> float:
+    """WCAG 2.x relative luminance of a '#rrggbb' color."""
+    h = hex_color.lstrip("#")
+    lin = []
+    for i in (0, 2, 4):
+        c = int(h[i:i + 2], 16) / 255
+        lin.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def contrast_ratio(a: str, b: str) -> float:
+    """WCAG 2.x contrast ratio between two '#rrggbb' colors."""
+    la, lb = relative_luminance(a), relative_luminance(b)
+    light, dark = (la, lb) if la >= lb else (lb, la)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def blend_hex(a: str, b: str, t: float) -> str:
+    """Linear RGB mix of two '#rrggbb' colors; t=0 -> a, t=1 -> b."""
+    ha, hb = a.lstrip("#"), b.lstrip("#")
+    out = "#"
+    for i in (0, 2, 4):
+        ca, cb = int(ha[i:i + 2], 16), int(hb[i:i + 2], 16)
+        out += f"{round(ca + (cb - ca) * t):02x}"
+    return out
 
 
 THEMES: List[ThemeInfo] = [
@@ -60,6 +87,7 @@ THEMES: List[ThemeInfo] = [
         row_focus_fg="#00ff7f",
         log_bg="#05080c",
         log_fg="#a8ffb2",
+        muted="#acb2b8",
         preview_palette=["#00ff7f", "#00e5ff", "#161b22", "#0d1117"],
     ),
     ThemeInfo(
@@ -80,67 +108,8 @@ THEMES: List[ThemeInfo] = [
         row_focus_fg="#00f0ff",
         log_bg="#07040d",
         log_fg="#ff80c0",
+        muted="#afb1bc",
         preview_palette=["#ff007f", "#00f0ff", "#171126", "#0c0817"],
-    ),
-    ThemeInfo(
-        id="dracula",
-        name="Dracula Vampire",
-        description="Classic dark theme with vibrant pastel purple, pink, and green accents",
-        accent="#bd93f9",
-        accent_2="#ff79c6",
-        bg="#1e1f29",
-        text="#f8f8f2",
-        surface="#282a36",
-        surface_2="#1e1f29",
-        border="#44475a",
-        btn_bg="#382a54",
-        btn_focus_bg="#6272a4",
-        btn_focus_fg="#ffffff",
-        row_focus_bg="#44475a",
-        row_focus_fg="#50fa7b",
-        log_bg="#15161e",
-        log_fg="#50fa7b",
-        preview_palette=["#bd93f9", "#ff79c6", "#50fa7b", "#282a36"],
-    ),
-    ThemeInfo(
-        id="catppuccin",
-        name="Catppuccin Mocha",
-        description="Soothing pastel palette with mauve, sky blue, and sapphire tones",
-        accent="#cba6f7",
-        accent_2="#89dceb",
-        bg="#181825",
-        text="#cdd6f4",
-        surface="#1e1e2e",
-        surface_2="#181825",
-        border="#313244",
-        btn_bg="#3b2d54",
-        btn_focus_bg="#45475a",
-        btn_focus_fg="#ffffff",
-        row_focus_bg="#313244",
-        row_focus_fg="#a6e3a1",
-        log_bg="#11111b",
-        log_fg="#a6e3a1",
-        preview_palette=["#cba6f7", "#89dceb", "#a6e3a1", "#1e1e2e"],
-    ),
-    ThemeInfo(
-        id="nordic_frost",
-        name="Nordic Frost",
-        description="Arctic-inspired cool frost blues, aurora cyan, and polar night slate",
-        accent="#88c0d0",
-        accent_2="#81a1c1",
-        bg="#242933",
-        text="#eceff4",
-        surface="#2e3440",
-        surface_2="#242933",
-        border="#434c5e",
-        btn_bg="#2b4554",
-        btn_focus_bg="#4c566a",
-        btn_focus_fg="#ffffff",
-        row_focus_bg="#3b4252",
-        row_focus_fg="#88c0d0",
-        log_bg="#1b1f27",
-        log_fg="#88c0d0",
-        preview_palette=["#88c0d0", "#81a1c1", "#a3be8c", "#2e3440"],
     ),
     ThemeInfo(
         id="sunset_amber",
@@ -160,6 +129,7 @@ THEMES: List[ThemeInfo] = [
         row_focus_fg="#ffb703",
         log_bg="#0a0806",
         log_fg="#ffd166",
+        muted="#bab09b",
         preview_palette=["#ffb703", "#fb8500", "#06d6a0", "#1f1a15"],
     ),
     ThemeInfo(
@@ -180,6 +150,7 @@ THEMES: List[ThemeInfo] = [
         row_focus_fg="#39ff14",
         log_bg="#000000",
         log_fg="#00ff00",
+        muted="#01cd01",
         preview_palette=["#00ff00", "#39ff14", "#041004", "#000000"],
     ),
     ThemeInfo(
@@ -200,7 +171,113 @@ THEMES: List[ThemeInfo] = [
         row_focus_fg="#00a8ff",
         log_bg="#000000",
         log_fg="#70cfff",
+        muted="#b0b0b0",
         preview_palette=["#00a8ff", "#ffffff", "#111111", "#000000"],
+    ),
+    ThemeInfo(
+        id="kanagawa_dragon",
+        name="Kanagawa Dragon",
+        description="Ink-wash charcoal with autumn gold, dragon red, and wave blue",
+        accent="#e6c384",
+        accent_2="#7fb4ca",
+        bg="#181616",
+        text="#c5c9c5",
+        surface="#282727",
+        surface_2="#181616",
+        border="#393836",
+        btn_bg="#3a3220",
+        btn_focus_bg="#c4b28a",
+        btn_focus_fg="#181616",
+        row_focus_bg="#2d4f67",
+        row_focus_fg="#e6c384",
+        log_bg="#0d0c0c",
+        log_fg="#87a987",
+        muted="#b1b4b0",
+        preview_palette=["#e6c384", "#7fb4ca", "#c4746e", "#282727"],
+    ),
+    ThemeInfo(
+        id="gotham",
+        name="Gotham",
+        description="Dark city-night teal and cyan on deep navy black",
+        accent="#2aa889",
+        accent_2="#33859e",
+        bg="#0c1014",
+        text="#99d1ce",
+        surface="#11151c",
+        surface_2="#0c1014",
+        border="#0a3749",
+        btn_bg="#0a3749",
+        btn_focus_bg="#245361",
+        btn_focus_fg="#d3ebe9",
+        row_focus_bg="#0a3749",
+        row_focus_fg="#99d1ce",
+        log_bg="#080c10",
+        log_fg="#2aa889",
+        muted="#89bab9",
+        preview_palette=["#2aa889", "#33859e", "#edb443", "#11151c"],
+    ),
+    ThemeInfo(
+        id="moonfly",
+        name="Moonfly",
+        description="Pure-black night sky with soft blue and violet glow",
+        accent="#80a0ff",
+        accent_2="#cf87e8",
+        bg="#080808",
+        text="#bdbdbd",
+        surface="#1c1c1c",
+        surface_2="#080808",
+        border="#323437",
+        btn_bg="#1c2a4d",
+        btn_focus_bg="#80a0ff",
+        btn_focus_fg="#080808",
+        row_focus_bg="#262626",
+        row_focus_fg="#80a0ff",
+        log_bg="#000000",
+        log_fg="#8cc85f",
+        muted="#b0b0b0",
+        preview_palette=["#80a0ff", "#cf87e8", "#8cc85f", "#1c1c1c"],
+    ),
+    ThemeInfo(
+        id="jellybeans",
+        name="Jellybeans",
+        description="Warm candy-colored orange, sky blue, and sage on charcoal",
+        accent="#ffba7b",
+        accent_2="#97bedc",
+        bg="#121212",
+        text="#dedede",
+        surface="#1c1c1c",
+        surface_2="#121212",
+        border="#3a3a3a",
+        btn_bg="#3d2a14",
+        btn_focus_bg="#ffa560",
+        btn_focus_fg="#121212",
+        row_focus_bg="#474e91",
+        row_focus_fg="#f4f4f4",
+        log_bg="#0c0c0c",
+        log_fg="#94b979",
+        muted="#b1b1b1",
+        preview_palette=["#ffba7b", "#97bedc", "#94b979", "#1c1c1c"],
+    ),
+    ThemeInfo(
+        id="tokyo_night",
+        name="Tokyo Night",
+        description="Neon-lit Tokyo night blues and violets on deep indigo",
+        accent="#7aa2f7",
+        accent_2="#bb9af7",
+        bg="#1a1b26",
+        text="#c0caf5",
+        surface="#24283b",
+        surface_2="#1a1b26",
+        border="#414868",
+        btn_bg="#283457",
+        btn_focus_bg="#7aa2f7",
+        btn_focus_fg="#1a1b26",
+        row_focus_bg="#283457",
+        row_focus_fg="#7dcfff",
+        log_bg="#15161e",
+        log_fg="#9ece6a",
+        muted="#aab3db",
+        preview_palette=["#7aa2f7", "#bb9af7", "#9ece6a", "#24283b"],
     ),
 ]
 
@@ -260,6 +337,7 @@ def palette(theme: Optional[ThemeInfo] = None) -> Dict[str, str]:
         "row_focus_fg": t.row_focus_fg,
         "log_bg": t.log_bg,
         "log_fg": t.log_fg,
+        "muted": t.muted,
     }
     result.update(STATIC_TOKENS)
     return result
