@@ -51,7 +51,7 @@ class BundlePatcherScreen(BaseScreen):
 
         sources = bundle_mgr.get_bundle_sources()
         if not sources:
-            b_list.append(ListItem(Label(Text("No saved bundle sources. Use Import from URL above.", style="dim"))))
+            b_list.append(ListItem(Label(Text("No saved bundle sources. Use Import from URL above.", style=palette()["muted"]))))
             return
 
         pal = palette()

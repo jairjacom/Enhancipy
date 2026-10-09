@@ -54,7 +54,7 @@ class KeystoreManagerScreen(BaseScreen):
 
         ks_list = keystore_mgr.get_keystores_list()
         if not ks_list:
-            k_list.append(ListItem(Label(Text("No custom keystore configured. Use Generate Keystore or Import File above.", style="dim"))))
+            k_list.append(ListItem(Label(Text("No custom keystore configured. Use Generate Keystore or Import File above.", style=palette()["muted"]))))
             return
 
         pal = palette()

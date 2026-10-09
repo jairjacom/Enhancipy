@@ -439,7 +439,7 @@ class DownloadProgressModal(ModalScreen[Optional[str]]):
                     )
                     continue
                 if not info.get("started"):
-                    lines.append(f"[dim]⏳ {label} — waiting...[/]")
+                    lines.append(f"[$enh-muted]⏳ {label} — waiting...[/]")
                     continue
                 if size > 0:
                     total_cur += info.get("cur", 0)
@@ -456,7 +456,7 @@ class DownloadProgressModal(ModalScreen[Optional[str]]):
                 filled = int(round(frac * mini_w))
                 bar = "█" * filled + "░" * (mini_w - filled)
                 lines.append(
-                    f"⬇ [bold]{label}[/] [dim]({size_s})[/]  "
+                    f"⬇ [bold]{label}[/] [$enh-muted]({size_s})[/]  "
                     f"[$enh-accent-2]{bar}[/] [bold]{pct_s}%[/]"
                 )
             if lines:

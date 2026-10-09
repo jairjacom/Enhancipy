@@ -18,7 +18,7 @@ import unittest
 
 os.environ.setdefault("ENHANCIFY_BOOT_SECONDS", "0.01")
 
-from src.theme import THEMES, set_current_theme
+from src.theme import THEMES, contrast_ratio, set_current_theme
 from src.tui.app import EnhancifyApp
 
 
@@ -31,6 +31,13 @@ def _run_async(coro):
 
 
 class TestThemeTokens(unittest.TestCase):
+    def test_secondary_text_is_readable_on_every_panel(self):
+        for t in THEMES:
+            for bg in (t.surface, t.surface_2, t.bg):
+                self.assertGreaterEqual(
+                    contrast_ratio(t.muted, bg), 7.0, msg=f"{t.id} muted on {bg}"
+                )
+
     def test_theme_switch_recolors_mounted_screen(self):
         async def scenario():
             set_current_theme("cyber_green")
@@ -43,7 +50,7 @@ class TestThemeTokens(unittest.TestCase):
                 before_bg = app.screen.styles.background.hex
                 before_accent = app.get_css_variables()["enh-accent"]
 
-                app.apply_theme("dracula")
+                app.apply_theme("tokyo_night")
                 await pilot.pause()
 
                 after_bg = app.screen.styles.background.hex
@@ -53,9 +60,9 @@ class TestThemeTokens(unittest.TestCase):
         before_bg, before_accent, after_bg, after_accent = _run_async(scenario())
 
         self.assertNotEqual(before_bg, after_bg)
-        self.assertEqual(after_bg, "#1E1F29")
+        self.assertEqual(after_bg, "#1A1B26")
         self.assertEqual(before_accent, "#00ff7f")
-        self.assertEqual(after_accent, "#bd93f9")
+        self.assertEqual(after_accent, "#7aa2f7")
 
     def test_theme_switch_recolors_nested_scrollbars(self):
         async def scenario():
@@ -75,7 +82,7 @@ class TestThemeTokens(unittest.TestCase):
                     lv.styles.scrollbar_background.hex.lower(),
                 )
 
-                app.apply_theme("dracula")
+                app.apply_theme("tokyo_night")
                 await pilot.pause()
 
                 after = (
@@ -88,7 +95,7 @@ class TestThemeTokens(unittest.TestCase):
         before, after = _run_async(scenario())
 
         self.assertEqual(before, ("#00ff7f", "#00e5ff", "#0d1117"))
-        self.assertEqual(after, ("#bd93f9", "#ff79c6", "#1e1f29"))
+        self.assertEqual(after, ("#7aa2f7", "#bb9af7", "#1a1b26"))
 
     def test_selected_theme_survives_relaunch(self):
         async def scenario():
@@ -103,7 +110,7 @@ class TestThemeTokens(unittest.TestCase):
 
                 lv = app.screen.query_one("#themes-list", ListView)
                 lv.focus()
-                lv.index = [t.id for t in THEMES].index("dracula")
+                lv.index = [t.id for t in THEMES].index("tokyo_night")
                 await pilot.pause()
                 await pilot.press("enter")
                 await pilot.pause()
@@ -112,10 +119,10 @@ class TestThemeTokens(unittest.TestCase):
 
         from src.config import config
 
-        self.assertIn("THEME_ID='dracula'", config.config_file.read_text())
+        self.assertIn("THEME_ID='tokyo_night'", config.config_file.read_text())
 
         relaunched = EnhancifyApp()
-        self.assertEqual(relaunched._theme_id, "dracula")
+        self.assertEqual(relaunched._theme_id, "tokyo_night")
 
     def test_theme_write_never_touches_the_repo_config(self):
         from pathlib import Path

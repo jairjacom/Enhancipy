@@ -111,7 +111,7 @@ class SourceSelectScreen(BaseScreen):
             if is_active:
                 txt.append("● " if not is_multi else "☑ ", style=f"bold {pal['accent']}")
             else:
-                txt.append("○ " if not is_multi else "☐ ", style="dim")
+                txt.append("○ " if not is_multi else "☐ ", style=pal["muted"])
 
             txt.append(f"{s.source:<20}", style=f"bold {pal['text']}" if is_active else pal["text"])
             if s.is_local:

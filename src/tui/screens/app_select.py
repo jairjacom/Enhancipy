@@ -405,7 +405,7 @@ class AppSelectScreen(BaseScreen):
         ]
 
         if not self.filtered_apps:
-            apps_list.append(ListItem(Label(Text("No matching applications found.", style="dim"))))
+            apps_list.append(ListItem(Label(Text("No matching applications found.", style=palette()["muted"]))))
             return
 
         pal = palette()

@@ -62,7 +62,7 @@ class TestDowngradeDialog(unittest.TestCase):
                 yes_before = app.screen.query_one("#btn-yes").styles.border_top[1].hex.lower()
                 no_before = app.screen.query_one("#btn-no").styles.border_top[1].hex.lower()
 
-                app.apply_theme("dracula")
+                app.apply_theme("tokyo_night")
                 await pilot.pause()
 
                 yes_after = app.screen.query_one("#btn-yes").styles.border_top[1].hex.lower()

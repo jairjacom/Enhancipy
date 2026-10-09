@@ -16,6 +16,13 @@ Screen {
     color: $enh-text;
 }
 
+/* One-cell, thin-line scrollbars on every scrollable widget
+   (drawn by LineScrollBarRender, src/tui/scrollbar.py). */
+* {
+    scrollbar-size-vertical: 1;
+    scrollbar-size-horizontal: 1;
+}
+
 #cyber-header {
     /* The outer CyberHeader widget does the docking; this inner container
        must stay in normal flow (a nested dock:top collapsed the header
