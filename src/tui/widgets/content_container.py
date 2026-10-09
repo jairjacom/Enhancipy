@@ -5,8 +5,10 @@ Scrollable container without ScrollableContainer's arrow-key bindings.
 
 from textual.containers import Container
 
+from src.tui.widgets.pan_scroll import HorizontalPanMixin
 
-class ContentContainer(Container):
+
+class ContentContainer(HorizontalPanMixin, Container):
     """Container with scrolling enabled via CSS, but none of
     ScrollableContainer's baked-in arrow/page-key bindings. Textual merges
     BINDINGS across the whole class hierarchy, so subclassing
@@ -21,7 +23,6 @@ class ContentContainer(Container):
     ContentContainer {
         overflow-y: auto;
         overflow-x: auto;
-        scrollbar-size-vertical: 2;
     }
     """
 

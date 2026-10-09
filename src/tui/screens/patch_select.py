@@ -11,9 +11,10 @@ from typing import Any, Dict, List, Optional, Set
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Button, Checkbox, Input, Label, ListItem, ListView, Static
+from src.tui.widgets.pan_scroll import PanScroll
 
 from src.assets import assets_mgr
 from src.config import config
@@ -147,7 +148,7 @@ class PatchSelectScreen(BaseScreen):
 
             yield ListView(id="patches-list")
 
-        with VerticalScroll(classes="card detail-card"):
+        with PanScroll(classes="card detail-card"):
             yield Label("ℹ️ Patch Description", classes="card-title")
             yield Label("Select a patch above to view its details.", id="patch-desc-label", classes="card-desc")
 
@@ -270,7 +271,7 @@ class PatchSelectScreen(BaseScreen):
             if is_enabled:
                 txt.append("☑ ", style=f"bold {pal['accent']}")
             else:
-                txt.append("☐ ", style="dim")
+                txt.append("☐ ", style=pal["muted"])
 
             txt.append(f"{name:<35}", style=f"bold {pal['text']}" if is_enabled else pal["muted"])
             if is_rec:

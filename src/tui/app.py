@@ -14,7 +14,7 @@ from textual.screen import Screen
 from src.config import config
 from src.environment import env
 from src.theme import THEME_MAP, css_variables, get_current_theme, palette
-from src.tui.scrollbar import ArrowScrollBarRender
+from src.tui.scrollbar import LineScrollBarRender
 from src.tui.screens.app_select import AppSelectScreen
 from src.tui.screens.boot_screen import BootScreen
 from src.tui.screens.bundle_patcher import BundlePatcherScreen
@@ -39,8 +39,8 @@ from src.tui.screens.version_select import VersionSelectScreen
 
 TCSS_PATH = Path(__file__).resolve().parent / "styles.tcss"
 
-# Decorate every scrollbar (all screens, both axes) with arrow glyphs.
-ScrollBar.renderer = ArrowScrollBarRender
+# Render every scrollbar (all screens, both axes) as a thin themed line with dot ends.
+ScrollBar.renderer = LineScrollBarRender
 
 
 class EnhancifyApp(App):

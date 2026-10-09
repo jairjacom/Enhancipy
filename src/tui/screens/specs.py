@@ -9,9 +9,10 @@ from typing import Optional
 import requests
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Vertical
 from textual.widgets import Button, Label
 
+from src.tui.widgets.pan_scroll import PanScroll
 from src.config import config
 from src.environment import env
 from src.tui.screens.base import BaseScreen
@@ -79,7 +80,7 @@ class SpecsScreen(BaseScreen):
             with ButtonBar():
                 yield Button("🔙 Back to Main Menu [B]", id="btn-back", classes="btn-secondary")
 
-        with VerticalScroll(classes="card detail-card"):
+        with PanScroll(classes="card detail-card"):
             yield Label(f"📋 EnhanciPy {specs.enhancify_version} Changelog", classes="card-title")
             yield Label("Loading release notes from GitHub...", id="changelog-label", classes="card-desc")
 
