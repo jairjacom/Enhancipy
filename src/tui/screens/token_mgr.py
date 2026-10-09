@@ -9,9 +9,10 @@ from typing import Optional
 import requests
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Label, Static
 
+from src.tui.widgets.pan_scroll import PanScroll
 from src.config import config
 from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog
@@ -40,7 +41,7 @@ class TokenManagerScreen(BaseScreen):
                 yield Button("📖 Guide [G]", id="btn-guide")
                 yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
-        with VerticalScroll(classes="card detail-card"):
+        with PanScroll(classes="card detail-card"):
             yield Label("⚡ Benefits of GitHub Token", classes="card-title")
             benefits = (
                 "• Increases API rate limit from 60 requests/hour to 5,000 requests/hour\n"

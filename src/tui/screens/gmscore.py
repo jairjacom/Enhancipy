@@ -11,9 +11,10 @@ from typing import Any, Dict, Optional
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Label, ListItem, ListView
 
+from src.tui.widgets.pan_scroll import PanScroll
 from src.features import GMSCORE_PROVIDERS, GmsCoreProvider, gmscore_mgr
 from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import DownloadProgressModal, MessageDialog, ProgressModal
@@ -56,7 +57,7 @@ class GmsCoreScreen(BaseScreen):
 
             yield ListView(id="gmscore-list")
 
-        with VerticalScroll(classes="card detail-card"):
+        with PanScroll(classes="card detail-card"):
             yield Label("📋 Release Changelog", classes="card-title")
             yield Label(
                 "Select a provider above to load its release details.",
