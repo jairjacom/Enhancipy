@@ -197,6 +197,16 @@ class SettingsScreen(BaseScreen):
                 self.app.push_screen(
                     MessageDialog("Warning", "Multi-Patcher is experimental!\nCombining patches from multiple sources may cause runtime conflicts.")
                 )
+            elif key == "Use_CUSTOM_KEYSTORE" and new_state:
+                from src.features import keystore_mgr
+                active, reason = keystore_mgr.resolve_active_keystore()
+                if active is None:
+                    self.app.push_screen(
+                        MessageDialog(
+                            "Custom Keystore Not Ready",
+                            f"{reason}\n\nPatching stays blocked until a keystore is set up, or this toggle is turned off.",
+                        )
+                    )
         if not changed:
             self.app.push_screen(MessageDialog("Saved", "No changes to save."))
 
