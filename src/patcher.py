@@ -7,6 +7,7 @@ and writes comprehensive patch logs to $STORAGE/patch_log.txt.
 import os
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import time
@@ -18,6 +19,36 @@ from src.assets import assets_mgr
 from src.config import config
 from src.environment import env
 from src.features import KeystoreManager
+
+REVANCIFY_KEYSTORE = "revancify.keystore"
+
+_BKS_KEY_ENTRY_TYPES = (2, 4)  # KEY, SEALED
+
+
+def read_bks_first_alias(path: Path) -> Optional[str]:
+    """First entry alias of a BouncyCastle BKS keystore, or None if unparseable.
+
+    Header (big-endian): int version(1|2), int saltLen, salt, int iterations,
+    then entries: byte type, UTF alias (u16 length + bytes), ...
+    """
+    try:
+        with open(path, "rb") as f:
+            data = f.read(4096)
+        version, salt_len = struct.unpack_from(">ii", data, 0)
+        if version not in (1, 2) or not 0 < salt_len <= 1024:
+            return None
+        off = 8 + salt_len + 4  # skip salt and iteration count
+        if data[off] not in _BKS_KEY_ENTRY_TYPES:
+            return None
+        (alias_len,) = struct.unpack_from(">H", data, off + 1)
+        raw = data[off + 3 : off + 3 + alias_len]
+        if len(raw) != alias_len:
+            return None
+        alias = raw.decode("utf-8")
+    except (struct.error, IndexError, UnicodeDecodeError, OSError):
+        return None
+    return alias if alias and alias.isprintable() else None
+
 
 
 MIN_HEAP_MB = 1024
@@ -102,7 +133,16 @@ class PatcherEngine:
                 return ["--unsigned"], None
             tmp = Path(tempfile.mkdtemp(prefix="enhancipy-signing-"))
             return [f"--keystore={tmp / 'transient.keystore'}"], tmp
-        return [f"--keystore={self.storage_dir / 'revancify.keystore'}"], None
+
+        # Each CLI family creates the file with its own default alias
+        # (Morphe / "ReVanced Key"); pin whichever one is already stored so
+        # every family keeps signing with the same key.
+        ks = self.storage_dir / REVANCIFY_KEYSTORE
+        args = [f"--keystore={ks}"]
+        alias = read_bks_first_alias(ks) if ks.exists() else None
+        if alias:
+            args.append(f"--keystore-entry-alias={alias}")
+        return args, None
 
     def write_log_header(
         self,
