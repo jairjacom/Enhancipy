@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from src.assets import assets_mgr
 from src.config import config
 from src.environment import env
+from src.features import KeystoreManager
 
 
 MIN_HEAP_MB = 1024
@@ -90,6 +92,17 @@ class PatcherEngine:
             "-XX:+OptimizeStringConcat",
         ]
         return heap_mb, gc_mode, jvm_args
+
+    def _signing_args(self, caps: Dict[str, Any]) -> Tuple[List[str], Optional[Path]]:
+        """CLI signing flags plus a temp dir the caller must delete (or None)."""
+        if config.is_on("Use_CUSTOM_KEYSTORE"):
+            # The installer re-signs with the user's key; the CLI must never
+            # touch revancify.keystore.
+            if caps.get("unsigned"):
+                return ["--unsigned"], None
+            tmp = Path(tempfile.mkdtemp(prefix="enhancipy-signing-"))
+            return [f"--keystore={tmp / 'transient.keystore'}"], tmp
+        return [f"--keystore={self.storage_dir / 'revancify.keystore'}"], None
 
     def write_log_header(
         self,
@@ -169,6 +182,14 @@ class PatcherEngine:
         progress_callback: Optional[Callable[[float, str], None]] = None,
     ) -> Tuple[bool, str]:
         """Execute patching process and stream logs."""
+        if config.is_on("Use_CUSTOM_KEYSTORE"):
+            active, reason = KeystoreManager(self.workspace_dir).resolve_active_keystore()
+            if active is None:
+                return False, (
+                    f"Use Custom Keystore is on, but the keystore can't be used:\n{reason}\n\n"
+                    "Fix it in Keystore Manager or turn off 'Use Custom Keystore'."
+                )
+
         if not shutil.which("java"):
             return False, "Java runtime (OpenJDK 17/21/25) not found in PATH!"
         java_ver_str, _ = env.detect_java_version(refresh=True)
@@ -201,11 +222,7 @@ class PatcherEngine:
 
         # Signing args
         caps = config.get_cli_capabilities()
-        signing_args = []
-        if config.is_on("Use_CUSTOM_KEYSTORE") and caps.get("unsigned"):
-            signing_args = ["--unsigned"]
-        else:
-            signing_args = [f"--keystore={self.storage_dir / 'revancify.keystore'}"]
+        signing_args, signing_tmp = self._signing_args(caps)
         cmd.extend(signing_args)
 
         # Verification args
@@ -261,49 +278,53 @@ class PatcherEngine:
 
         # Execute process and stream logs
         try:
-            with open(self.log_file, "a", encoding="utf-8") as log_f:
-                log_f.write(f"Executing: {' '.join(cmd)}\n\n")
+            try:
+                with open(self.log_file, "a", encoding="utf-8") as log_f:
+                    log_f.write(f"Executing: {' '.join(cmd)}\n\n")
 
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                )
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                    )
 
-                if proc.stdout:
-                    for line in proc.stdout:
-                        log_f.write(line)
-                        log_f.flush()
-                        clean_line = line.strip()
-                        if log_callback:
-                            log_callback(clean_line)
+                    if proc.stdout:
+                        for line in proc.stdout:
+                            log_f.write(line)
+                            log_f.flush()
+                            clean_line = line.strip()
+                            if log_callback:
+                                log_callback(clean_line)
 
-                        # Update progress hints
-                        if progress_callback:
-                            if "Compiling resources" in clean_line:
-                                progress_callback(0.2, "Compiling resources...")
-                            elif "Executing patches" in clean_line:
-                                progress_callback(0.5, "Executing patches...")
-                            elif "Writing modified files" in clean_line:
-                                progress_callback(0.8, "Writing modified files...")
-                            elif "Signing" in clean_line:
-                                progress_callback(0.9, "Signing APK...")
+                            # Update progress hints
+                            if progress_callback:
+                                if "Compiling resources" in clean_line:
+                                    progress_callback(0.2, "Compiling resources...")
+                                elif "Executing patches" in clean_line:
+                                    progress_callback(0.5, "Executing patches...")
+                                elif "Writing modified files" in clean_line:
+                                    progress_callback(0.8, "Writing modified files...")
+                                elif "Signing" in clean_line:
+                                    progress_callback(0.9, "Signing APK...")
 
-                proc.wait()
+                    proc.wait()
 
-            # Check for memory errors in log
-            log_content = self.log_file.read_text(encoding="utf-8")
-            if any(err in log_content for err in ["OutOfMemoryError", "Cannot allocate memory", "GC overhead limit exceeded", "Java heap space"]):
-                return False, f"Patching failed due to Java Out Of Memory Error! (Allocated: {heap_mb}MB)"
+                # Check for memory errors in log
+                log_content = self.log_file.read_text(encoding="utf-8")
+                if any(err in log_content for err in ["OutOfMemoryError", "Cannot allocate memory", "GC overhead limit exceeded", "Java heap space"]):
+                    return False, f"Patching failed due to Java Out Of Memory Error! (Allocated: {heap_mb}MB)"
 
-            if proc.returncode != 0 or not cfg.output_apk_path.exists():
-                return False, f"Patching failed with exit code {proc.returncode}. Check logs for details."
+                if proc.returncode != 0 or not cfg.output_apk_path.exists():
+                    return False, f"Patching failed with exit code {proc.returncode}. Check logs for details."
 
-            return True, f"Patching completed successfully! Output: {cfg.output_apk_path.name}"
-        except Exception as e:
-            return False, f"Execution failed: {e}"
+                return True, f"Patching completed successfully! Output: {cfg.output_apk_path.name}"
+            except Exception as e:
+                return False, f"Execution failed: {e}"
+        finally:
+            if signing_tmp is not None:
+                shutil.rmtree(signing_tmp, ignore_errors=True)
 
 
 # Global patcher engine instance
