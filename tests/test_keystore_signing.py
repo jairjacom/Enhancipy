@@ -22,7 +22,7 @@ from unittest import mock
 
 from src.config import config
 from src.features import KeystoreManager
-from src.patcher import PatchExecutionConfig, PatcherEngine, read_bks_first_alias
+from src.patcher import KeystoreSetupError, PatchExecutionConfig, PatcherEngine, read_bks_first_alias
 
 REPO = Path(__file__).resolve().parent.parent
 BC_JAR = next((REPO / "utils").glob("bcprov*.jar"))
@@ -46,6 +46,15 @@ def _keytool(path: Path, store_type: str, alias: str) -> None:
     subprocess.run(cmd, check=True, capture_output=True, timeout=60)
 
 
+def _keytool_opens(path: Path, store_password: str) -> bool:
+    cmd = [
+        "keytool", "-list", "-keystore", str(path), "-storepass", store_password,
+        "-storetype", "BKS", "-providerclass", "org.bouncycastle.jce.provider.BouncyCastleProvider",
+        "-providerpath", str(BC_JAR),
+    ]
+    return subprocess.run(cmd, capture_output=True, timeout=60).returncode == 0
+
+
 def _set_toggle(value: str) -> None:
     config.set("Use_CUSTOM_KEYSTORE", value)
 
@@ -59,6 +68,8 @@ class _Base(unittest.TestCase):
         patcher = mock.patch.object(config, "cli_detection_file", self.tmp / "cli_detection.json")
         patcher.start()
         self.addCleanup(patcher.stop)
+        (self.tmp / "utils").mkdir()
+        shutil.copy(BC_JAR, self.tmp / "utils" / BC_JAR.name)
         self.engine = PatcherEngine(workspace_dir=self.tmp)
         self.engine.storage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -93,31 +104,53 @@ class TestReadBksFirstAlias(unittest.TestCase):
 
 
 class TestSigningArgs(_Base):
-    def test_off_without_file_passes_only_keystore_path(self):
+    @NEED_KEYTOOL
+    def test_off_creates_keystore_and_passes_every_credential(self):
         _set_toggle("off")
+        ks = self.engine.storage_dir / "revancify.keystore"
         args, tmp = self.engine._signing_args({"unsigned": True})
-        self.assertEqual(args, [f"--keystore={self.engine.storage_dir / 'revancify.keystore'}"])
+        self.assertEqual(args, [
+            f"--keystore={ks}",
+            "--keystore-password=Morphe",
+            "--keystore-entry-alias=Morphe",
+            "--keystore-entry-password=Morphe",
+        ])
         self.assertIsNone(tmp)
+        self.assertEqual(read_bks_first_alias(ks), "Morphe")
+        self.assertTrue(_keytool_opens(ks, "Morphe"))
 
-    def test_off_ignores_unsigned_capability(self):
+        # A second run reuses the same key instead of regenerating it.
+        before = ks.read_bytes()
+        self.assertEqual(self.engine._signing_args({})[0], args)
+        self.assertEqual(ks.read_bytes(), before)
+
+    def test_off_never_uses_unsigned_even_if_cli_supports_it(self):
         _set_toggle("off")
-        args, _ = self.engine._signing_args({"unsigned": True})
+        try:
+            args, _ = self.engine._signing_args({"unsigned": True})
+        except KeystoreSetupError:
+            return  # no keytool in this environment; covered by the test above
         self.assertNotIn("--unsigned", args)
 
-    def test_off_with_unparseable_file_passes_no_alias(self):
-        _set_toggle("off")
-        (self.engine.storage_dir / "revancify.keystore").write_bytes(b"not a keystore")
-        args, _ = self.engine._signing_args({})
-        self.assertEqual(len(args), 1)
-
     @NEED_KEYTOOL
-    def test_off_pins_alias_stored_in_existing_keystore(self):
+    def test_off_existing_foreign_keystore_keeps_its_alias_and_uses_empty_entry_password(self):
         _set_toggle("off")
         ks = self.engine.storage_dir / "revancify.keystore"
         _keytool(ks, "BKS", "ReVanced Key")
-        args, tmp = self.engine._signing_args({})
-        self.assertEqual(args, [f"--keystore={ks}", "--keystore-entry-alias=ReVanced Key"])
-        self.assertIsNone(tmp)
+        before = ks.read_bytes()
+        args, _ = self.engine._signing_args({})
+        self.assertIn("--keystore-entry-alias=ReVanced Key", args)
+        self.assertIn("--keystore-entry-password=", args)
+        self.assertEqual(ks.read_bytes(), before)
+
+    def test_off_garbage_keystore_is_refused_untouched(self):
+        _set_toggle("off")
+        ks = self.engine.storage_dir / "revancify.keystore"
+        ks.write_bytes(b"not a keystore")
+        with self.assertRaises(KeystoreSetupError) as cm:
+            self.engine._signing_args({})
+        self.assertIn("revancify.keystore", str(cm.exception))
+        self.assertEqual(ks.read_bytes(), b"not a keystore")
 
     def test_on_with_unsigned_cli_emits_unsigned(self):
         _set_toggle("on")
@@ -187,6 +220,7 @@ class TestRunPatch(_Base):
         self.assertIn("No custom keystore is set up", msg)
         self.assertEqual(cmds, [])
 
+    @NEED_KEYTOOL
     def test_stale_capability_cache_is_reprobed_for_the_actual_jar(self):
         _set_toggle("off")
         config.cli_detection_file.write_text(json.dumps(
@@ -197,6 +231,7 @@ class TestRunPatch(_Base):
         probe.assert_called_once_with(self.tmp / "CLI-b.jar")
         self.assertEqual(len(cmds), 1)
 
+    @NEED_KEYTOOL
     def test_matching_capability_cache_is_not_reprobed(self):
         _set_toggle("off")
         config.cli_detection_file.write_text(json.dumps(

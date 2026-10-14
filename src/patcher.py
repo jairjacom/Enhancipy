@@ -19,10 +19,30 @@ from src.assets import assets_mgr
 from src.config import config
 from src.environment import env
 from src.features import KeystoreManager
+from src.utils import run_command
 
 REVANCIFY_KEYSTORE = "revancify.keystore"
 
+# Credentials of a keystore EnhanciPy creates. They match Morphe's defaults
+# (alias and entry password "Morphe"); keytool needs >= 6 characters, so the
+# store password can't be Morphe's empty default.
+REVANCIFY_ALIAS = "Morphe"
+REVANCIFY_PASSWORD = "Morphe"
+_BC_PROVIDER = "org.bouncycastle.jce.provider.BouncyCastleProvider"
+
 _BKS_KEY_ENTRY_TYPES = (2, 4)  # KEY, SEALED
+
+
+class KeystoreSetupError(Exception):
+    """revancify.keystore could not be created or opened."""
+
+
+@dataclass(frozen=True)
+class SigningCredentials:
+    store_password: str
+    alias: str
+    entry_password: str
+
 
 
 def read_bks_first_alias(path: Path) -> Optional[str]:
@@ -48,6 +68,60 @@ def read_bks_first_alias(path: Path) -> Optional[str]:
     except (struct.error, IndexError, UnicodeDecodeError, OSError):
         return None
     return alias if alias and alias.isprintable() else None
+
+
+def _keytool(args: List[str], bc_jar: Path) -> bool:
+    code, _, _ = run_command(
+        ["keytool", *args, "-storetype", "BKS",
+         "-providerclass", _BC_PROVIDER, "-providerpath", str(bc_jar)],
+        timeout=60,
+    )
+    return code == 0
+
+
+def prepare_revancify_keystore(ks: Path, utils_dir: Path) -> SigningCredentials:
+    """Create revancify.keystore if missing, and work out how to open it.
+
+    CLIs can't be trusted to create it: Morphe CLI 1.18.2+ aborts on a missing
+    keystore, and each CLI family writes its own alias and entry password. So
+    EnhanciPy creates the file and always passes every credential explicitly.
+    Existing files keep their key: the alias is read from the file, the entry
+    password follows Morphe's convention for alias "Morphe" (ReVanced-style
+    files use an empty one), and the store password is "Morphe" (created by
+    EnhanciPy) or empty (created by Morphe CLI).
+    """
+    if not shutil.which("keytool"):
+        raise KeystoreSetupError("Java 'keytool' not found; install a full JDK (e.g. `pkg install openjdk-21`).")
+    bc_jar = next(utils_dir.glob("bcprov*.jar"), None)
+    if bc_jar is None:
+        raise KeystoreSetupError("Bouncy Castle provider JAR not found in utils directory!")
+
+    if not ks.exists():
+        ks.parent.mkdir(parents=True, exist_ok=True)
+        ok = _keytool(
+            ["-genkeypair", "-keystore", str(ks), "-alias", REVANCIFY_ALIAS,
+             "-keyalg", "RSA", "-keysize", "2048", "-sigalg", "SHA512withRSA",
+             "-validity", "10000", "-storepass", REVANCIFY_PASSWORD,
+             "-keypass", REVANCIFY_PASSWORD, "-dname", "CN=Morphe"],
+            bc_jar,
+        )
+        if not ok or not ks.exists():
+            ks.unlink(missing_ok=True)
+            raise KeystoreSetupError(f"Could not create {ks.name} with keytool.")
+        return SigningCredentials(REVANCIFY_PASSWORD, REVANCIFY_ALIAS, REVANCIFY_PASSWORD)
+
+    alias = read_bks_first_alias(ks)
+    if alias is not None:
+        entry_password = REVANCIFY_PASSWORD if alias == REVANCIFY_ALIAS else ""
+        for store_password in (REVANCIFY_PASSWORD, ""):
+            if _keytool(["-list", "-keystore", str(ks), "-storepass", store_password], bc_jar):
+                return SigningCredentials(store_password, alias, entry_password)
+    raise KeystoreSetupError(
+        f"{ks.name} can't be opened with any known credentials (it was probably created by another tool).\n"
+        f"Delete {ks} to let EnhanciPy create a new one (apps signed with the old key must be "
+        "uninstalled before the new build can be installed), or turn on 'Use Custom Keystore'."
+    )
+
 
 
 
@@ -125,7 +199,10 @@ class PatcherEngine:
         return heap_mb, gc_mode, jvm_args
 
     def _signing_args(self, caps: Dict[str, Any]) -> Tuple[List[str], Optional[Path]]:
-        """CLI signing flags plus a temp dir the caller must delete (or None)."""
+        """CLI signing flags plus a temp dir the caller must delete (or None).
+
+        Raises KeystoreSetupError when revancify.keystore can't be prepared.
+        """
         if config.is_on("Use_CUSTOM_KEYSTORE"):
             # The installer re-signs with the user's key; the CLI must never
             # touch revancify.keystore.
@@ -134,15 +211,14 @@ class PatcherEngine:
             tmp = Path(tempfile.mkdtemp(prefix="enhancipy-signing-"))
             return [f"--keystore={tmp / 'transient.keystore'}"], tmp
 
-        # Each CLI family creates the file with its own default alias
-        # (Morphe / "ReVanced Key"); pin whichever one is already stored so
-        # every family keeps signing with the same key.
         ks = self.storage_dir / REVANCIFY_KEYSTORE
-        args = [f"--keystore={ks}"]
-        alias = read_bks_first_alias(ks) if ks.exists() else None
-        if alias:
-            args.append(f"--keystore-entry-alias={alias}")
-        return args, None
+        creds = prepare_revancify_keystore(ks, self.workspace_dir / "utils")
+        return [
+            f"--keystore={ks}",
+            f"--keystore-password={creds.store_password}",
+            f"--keystore-entry-alias={creds.alias}",
+            f"--keystore-entry-password={creds.entry_password}",
+        ], None
 
     def write_log_header(
         self,
@@ -264,7 +340,10 @@ class PatcherEngine:
         caps = config.get_cli_capabilities()
         if caps.get("cli_jar") != cfg.cli_jar.name:
             caps = assets_mgr.detect_cli_capabilities(cfg.cli_jar)
-        signing_args, signing_tmp = self._signing_args(caps)
+        try:
+            signing_args, signing_tmp = self._signing_args(caps)
+        except KeystoreSetupError as e:
+            return False, str(e)
         cmd.extend(signing_args)
 
         # Verification args
