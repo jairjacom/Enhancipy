@@ -445,17 +445,53 @@ class KeystoreManager:
         self.keystore_json.write_text(json.dumps(meta, indent=2), encoding="utf-8")
         return True, f"Keystore '{filename}' generated successfully!"
 
+    def _detect_keystore_type(self, path: Path, password: str) -> Optional[str]:
+        """Open the keystore with keytool to find its real type, or None."""
+        if not shutil.which("keytool"):
+            return None
+
+        base = ["keytool", "-list", "-keystore", str(path), "-storepass", password]
+        code, out, err = run_command(base, timeout=30)
+        if code == 0:
+            m = re.search(r"Keystore type:\s*(\w+)", f"{out}\n{err}")
+            if m:
+                return m.group(1).upper()
+
+        bc_jar = next(self.utils_dir.glob("bcprov*.jar"), None)
+        if bc_jar:
+            for store_type in ("BKS", "UBER"):
+                code, _, _ = run_command(
+                    base + [
+                        "-storetype", store_type,
+                        "-providerclass", "org.bouncycastle.jce.provider.BouncyCastleProvider",
+                        "-providerpath", str(bc_jar),
+                    ],
+                    timeout=30,
+                )
+                if code == 0:
+                    return store_type
+        return None
+
     def import_keystore_file(
         self,
         src_path: Path,
         alias: str,
         keystore_pass: str,
         key_pass: str,
-        store_type: str = "PKCS12",
+        store_type: Optional[str] = None,
     ) -> Tuple[bool, str]:
-        """Import an existing keystore file."""
+        """Import an existing keystore file, detecting its type when not given."""
         if not src_path.exists():
             return False, "Source keystore file does not exist."
+
+        if store_type is None:
+            store_type = KEYSTORE_EXT_TYPES.get(src_path.suffix.lower())
+        if store_type is None:
+            # Ambiguous extension (.keystore): open it before touching the
+            # currently configured keystore, so a wrong password loses nothing.
+            store_type = self._detect_keystore_type(src_path, keystore_pass)
+            if store_type is None:
+                return False, "Could not open the keystore: wrong password or unsupported format."
 
         # Clean existing
         if self.keystore_dir.exists():
