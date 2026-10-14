@@ -1,5 +1,32 @@
 # EnhanciPy Changelog
 
+## [v1.5.1] — signing keys that work with every patch source
+
+### Added
+
+- **Warning when you turn on "Use Custom Keystore" without one set up.**
+  Settings now tells you right away and explains how to fix it.
+
+### Fixed
+
+- **Patching with the built-in signing key failed with newer Morphe tools.**
+  The app now creates its own signing key the first time you patch and
+  reuses it, so every patch source signs with the same key and updates
+  keep installing over older builds. A key you already have is kept.
+- **"Use Custom Keystore" could fail only at the very end.** Patching now
+  stops immediately, with the reason, if your keystore is missing or
+  unreadable, instead of finishing and then failing to install.
+- **The built-in key could be used while "Use Custom Keystore" was on**
+  with tools that can't skip signing. Your own key is now the only one
+  used for the final app.
+- **The wrong keystore file could be used** when more than one was in the
+  keystore folder. The app now uses exactly the one you set up.
+- **Imported keystores were always treated as one type**, so some of them
+  failed when signing. The real type is now detected, and a wrong password
+  no longer wipes the keystore you already had.
+- **Tool features could be misdetected** after switching to a different
+  patching tool version, which affected signing and native-library options.
+
 ## [v1.5.0] — easier-to-read text, thin scrollbars, new themes
 
 ### Added
