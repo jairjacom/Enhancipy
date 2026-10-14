@@ -186,7 +186,7 @@ class ConfigManager:
 
     # --- CLI Capabilities ---
 
-    def get_cli_capabilities(self) -> Dict[str, bool]:
+    def get_cli_capabilities(self) -> Dict[str, Any]:
         """Read cached CLI detection."""
         if self.cli_detection_file.exists():
             try:
@@ -195,10 +195,10 @@ class ConfigManager:
                 pass
         return {"unsigned": False, "riplib": False, "striplibs": False}
 
-    def save_cli_capabilities(self, unsigned: bool, riplib: bool, striplibs: bool) -> None:
-        """Save CLI capability detection."""
+    def save_cli_capabilities(self, cli_jar_name: str, unsigned: bool, riplib: bool, striplibs: bool) -> None:
+        """Save CLI capability detection for the named CLI jar."""
         try:
-            data = {"unsigned": unsigned, "riplib": riplib, "striplibs": striplibs}
+            data = {"cli_jar": cli_jar_name, "unsigned": unsigned, "riplib": riplib, "striplibs": striplibs}
             self.cli_detection_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:
             pass

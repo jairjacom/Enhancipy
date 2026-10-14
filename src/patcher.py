@@ -262,6 +262,8 @@ class PatcherEngine:
 
         # Signing args
         caps = config.get_cli_capabilities()
+        if caps.get("cli_jar") != cfg.cli_jar.name:
+            caps = assets_mgr.detect_cli_capabilities(cfg.cli_jar)
         signing_args, signing_tmp = self._signing_args(caps)
         cmd.extend(signing_args)
 
