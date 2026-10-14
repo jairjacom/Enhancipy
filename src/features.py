@@ -291,6 +291,26 @@ class BundlePatcherManager:
 # 3. Custom Keystore Management
 # ==========================================
 
+KEYSTORE_EXT_TYPES: Dict[str, str] = {
+    ".p12": "PKCS12", ".pfx": "PKCS12", ".jks": "JKS",
+    ".jceks": "JCEKS", ".uber": "UBER", ".bks": "BKS",
+}
+
+NO_KEYSTORE_REASON = (
+    "No custom keystore is set up. Generate or import one in "
+    "Settings → Configuration Modules → Keystore Manager."
+)
+
+
+@dataclass(frozen=True)
+class ActiveKeystore:
+    path: Path
+    alias: str
+    keystore_password: str
+    key_password: str
+    keystore_type: str
+
+
 class KeystoreManager:
     """Handles keytool generation and custom keystore storage."""
 
@@ -301,13 +321,35 @@ class KeystoreManager:
         self.utils_dir = self.workspace_dir / "utils"
         self.keystore_dir.mkdir(parents=True, exist_ok=True)
 
-    def has_keystore(self) -> bool:
-        """Check if any custom keystore is present."""
-        if not self.keystore_dir.exists():
-            return False
-        return any(self.keystore_dir.glob("*.p12")) or any(self.keystore_dir.glob("*.jks")) or \
-               any(self.keystore_dir.glob("*.pfx")) or any(self.keystore_dir.glob("*.keystore")) or \
-               any(self.keystore_dir.glob("*.uber")) or any(self.keystore_dir.glob("*.bks"))
+    def resolve_active_keystore(self) -> Tuple[Optional[ActiveKeystore], str]:
+        """Resolve the keystore named in keystore.json. Returns (keystore, "") or (None, reason)."""
+        if not self.keystore_json.exists():
+            return None, NO_KEYSTORE_REASON
+        try:
+            data = json.loads(self.keystore_json.read_text(encoding="utf-8"))
+        except Exception:
+            return None, "The custom keystore settings are unreadable. Re-import or regenerate the keystore in Keystore Manager."
+        if not isinstance(data, dict):
+            return None, "The custom keystore settings are unreadable. Re-import or regenerate the keystore in Keystore Manager."
+        if not data:
+            return None, NO_KEYSTORE_REASON
+
+        entries = sorted(data.items())
+        chosen = next(((n, e) for n, e in entries if (self.keystore_dir / n).exists()), None)
+        if chosen is None:
+            return None, f"Keystore file '{entries[0][0]}' is missing. Re-import or regenerate it in Keystore Manager."
+
+        filename, entry = chosen
+        if not isinstance(entry, dict):
+            return None, "The custom keystore settings are unreadable. Re-import or regenerate the keystore in Keystore Manager."
+        path = self.keystore_dir / filename
+        alias = entry.get("alias") or ""
+        ks_pass = entry.get("keystore_password") or ""
+        key_pass = entry.get("private_key_password") or ks_pass
+        ks_type = (entry.get("keystore_type") or "").upper() or KEYSTORE_EXT_TYPES.get(path.suffix.lower(), "PKCS12")
+        if not alias or not ks_pass:
+            return None, "Keystore alias or password missing in keystore.json!"
+        return ActiveKeystore(path, alias, ks_pass, key_pass, ks_type), ""
 
     def get_keystores_list(self) -> List[Dict[str, Any]]:
         """List configured keystores."""

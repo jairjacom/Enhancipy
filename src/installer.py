@@ -5,7 +5,6 @@ Root mount/umount scripts, Rish privilege installs with Dex Optimizer,
 and Non-privilege export to $STORAGE/Patched/.
 """
 
-import json
 import os
 import re
 import shutil
@@ -18,6 +17,7 @@ from typing import Callable, NamedTuple, Optional, Tuple
 from src.config import config
 from src.deps import DependencyBootstrap
 from src.environment import env
+from src.features import KeystoreManager
 from src.utils import rish_environ, run_command, run_rish
 
 
@@ -70,7 +70,7 @@ class AppInstaller:
         self.system_dir = self.workspace_dir / "system"
         self.storage_dir = (self.workspace_dir / "storage") if workspace_dir else env.storage_dir
         self.zipalign_bin = self.utils_dir / "zipalign"
-        self.keystore_dir = self.workspace_dir / "keystore"
+        self.keystores = KeystoreManager(self.workspace_dir)
 
     # --- Zipalign ---
 
@@ -106,33 +106,9 @@ class AppInstaller:
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> Tuple[bool, str]:
         """Sign APK using custom keystore, apksigner.jar, and Bouncy Castle."""
-        keystore_json = self.keystore_dir / "keystore.json"
-        if not self.keystore_dir.exists() or not keystore_json.exists():
-            return False, "Custom keystore configuration not found!"
-
-        # Find keystore file
-        ks_files = list(self.keystore_dir.glob("*.p12")) + list(self.keystore_dir.glob("*.jks")) + \
-                   list(self.keystore_dir.glob("*.pfx")) + list(self.keystore_dir.glob("*.keystore")) + \
-                   list(self.keystore_dir.glob("*.jceks")) + list(self.keystore_dir.glob("*.uber")) + \
-                   list(self.keystore_dir.glob("*.bks"))
-
-        if not ks_files:
-            return False, "No keystore file found in keystore directory!"
-
-        ks_file = ks_files[0]
-        try:
-            ks_meta = json.loads(keystore_json.read_text(encoding="utf-8"))
-            ks_info = ks_meta.get(ks_file.name, {})
-        except Exception:
-            return False, "Failed to read keystore.json metadata!"
-
-        alias = ks_info.get("alias", "")
-        ks_pass = ks_info.get("keystore_password", "")
-        key_pass = ks_info.get("private_key_password", ks_pass)
-        ks_type = ks_info.get("keystore_type", "PKCS12")
-
-        if not alias or not ks_pass:
-            return False, "Keystore alias or password missing in keystore.json!"
+        active, reason = self.keystores.resolve_active_keystore()
+        if active is None:
+            return False, reason
 
         apksigner_jar = next(self.utils_dir.glob("apksigner*.jar"), None)
         bc_jar = next(self.utils_dir.glob("bcprov*.jar"), None)
@@ -141,22 +117,24 @@ class AppInstaller:
             return False, "apksigner.jar not found in utils directory!"
 
         if progress_callback:
-            progress_callback(f"Signing APK with {ks_type} keystore ({ks_file.name})...")
+            progress_callback(f"Signing APK with {active.keystore_type} keystore ({active.path.name})...")
 
-        # Create temporary password files for apksigner
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f_kspass, \
-             tempfile.NamedTemporaryFile(mode="w", delete=False) as f_keypass:
-            f_kspass.write(ks_pass)
-            f_keypass.write(key_pass)
-            p_kspass = Path(f_kspass.name)
-            p_keypass = Path(f_keypass.name)
-
+        p_kspass: Optional[Path] = None
+        p_keypass: Optional[Path] = None
         try:
+            # Temporary password files for apksigner
+            with tempfile.NamedTemporaryFile(mode="w", delete=False) as f_kspass:
+                p_kspass = Path(f_kspass.name)
+                f_kspass.write(active.keystore_password)
+            with tempfile.NamedTemporaryFile(mode="w", delete=False) as f_keypass:
+                p_keypass = Path(f_keypass.name)
+                f_keypass.write(active.key_password)
+
             signed_out = apk_path.parent / f"{apk_path.stem}_signed.apk"
 
-            if ks_type in ("UBER", "BKS"):
+            if active.keystore_type in ("UBER", "BKS"):
                 if not bc_jar or not bc_jar.exists():
-                    return False, f"Bouncy Castle provider JAR required for {ks_type} keystores!"
+                    return False, f"Bouncy Castle provider JAR required for {active.keystore_type} keystores!"
 
                 cmd = [
                     "java",
@@ -172,15 +150,15 @@ class AppInstaller:
                     "--provider-pos",
                     "1",
                     "--ks",
-                    str(ks_file),
+                    str(active.path),
                     "--ks-pass",
                     f"file:{p_kspass}",
                     "--key-pass",
                     f"file:{p_keypass}",
                     "--ks-type",
-                    ks_type,
+                    active.keystore_type,
                     "--ks-key-alias",
-                    alias,
+                    active.alias,
                     "--v1-signing-enabled",
                     "true",
                     "--v2-signing-enabled",
@@ -203,15 +181,15 @@ class AppInstaller:
                     str(apksigner_jar),
                     "sign",
                     "--ks",
-                    str(ks_file),
+                    str(active.path),
                     "--ks-pass",
                     f"file:{p_kspass}",
                     "--key-pass",
                     f"file:{p_keypass}",
                     "--ks-type",
-                    ks_type,
+                    active.keystore_type,
                     "--ks-key-alias",
-                    alias,
+                    active.alias,
                     "--v1-signing-enabled",
                     "true",
                     "--v2-signing-enabled",
@@ -232,8 +210,9 @@ class AppInstaller:
             else:
                 return False, f"Signing failed: {out}\n{err}"
         finally:
-            p_kspass.unlink(missing_ok=True)
-            p_keypass.unlink(missing_ok=True)
+            for p in (p_kspass, p_keypass):
+                if p is not None:
+                    p.unlink(missing_ok=True)
 
     # --- Mode-Specific Installation ---
 
