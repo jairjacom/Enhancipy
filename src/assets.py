@@ -863,14 +863,14 @@ class AssetsManager:
 
     # --- CLI Capability Detection ---
 
-    def detect_cli_capabilities(self, cli_jar: Path) -> Dict[str, bool]:
+    def detect_cli_capabilities(self, cli_jar: Path) -> Dict[str, Any]:
         """Detect supported arguments by invoking `java -jar <cli> patch --help`."""
         unsigned = False
         riplib = False
         striplibs = False
 
         if cli_jar.exists() and shutil.which("java"):
-            code, out, err = run_command(["java", "-jar", str(cli_jar), "patch", "--help"], timeout=5)
+            code, out, err = run_command(["java", "-jar", str(cli_jar), "patch", "--help"], timeout=20)
             full_out = (out + "\n" + err).lower()
             if "--unsigned" in full_out:
                 unsigned = True
@@ -879,8 +879,8 @@ class AssetsManager:
             if "--striplibs" in full_out:
                 striplibs = True
 
-        config.save_cli_capabilities(unsigned, riplib, striplibs)
-        return {"unsigned": unsigned, "riplib": riplib, "striplibs": striplibs}
+        config.save_cli_capabilities(cli_jar.name, unsigned, riplib, striplibs)
+        return {"cli_jar": cli_jar.name, "unsigned": unsigned, "riplib": riplib, "striplibs": striplibs}
 
     # --- Patches JSON Parsing ---
 
