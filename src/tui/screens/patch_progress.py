@@ -61,7 +61,7 @@ class PatchProgressScreen(BaseScreen):
 
         with Vertical(classes="card log-card"):
             yield Label("📜 Live Console Output", classes="card-title")
-            yield RichLog(id="log-viewer", highlight=True, markup=True)
+            yield RichLog(id="log-viewer", highlight=True, markup=True, wrap=True, min_width=1)
 
     def on_mount(self) -> None:
         self.start_patching_process()
