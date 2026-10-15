@@ -811,7 +811,7 @@ class PatchDescriptionDialog(ModalScreen[None]):
         with Vertical(classes="dialog-box small-dialog"):
             yield Label("| Patch Details |", classes="dialog-title")
             yield Label(f"[{name_style}]{self.patch_name}[/]{badge}", id="patch-dialog-name")
-            with VerticalScroll(id="patch-desc-scroll", classes="desc-scroll"):
+            with VerticalScroll(id="patch-desc-scroll", classes="dialog-scroll desc-scroll"):
                 yield Label(self.description, classes="dialog-message desc-text")
             with ButtonBar(classes="dialog-buttons"):
                 yield Button("Confirm", id="btn-confirm", classes="btn-primary")
@@ -870,7 +870,7 @@ class ChangelogDialog(ModalScreen[Optional[bool]]):
         with Vertical(classes="dialog-box changelog-dialog"):
             yield Label("| Changelog |", classes="dialog-title")
             yield Label(self._meta_text(), classes="dialog-message changelog-meta")
-            with VerticalScroll(id="changelog-scroll", classes="desc-scroll"):
+            with VerticalScroll(id="changelog-scroll", classes="dialog-scroll desc-scroll"):
                 yield Label(
                     self.changelog if self.changelog else "No changelog provided for this release.",
                     classes="dialog-message desc-text",
@@ -925,7 +925,7 @@ class ToggleSwitchDialog(ModalScreen[Optional[Dict[str, bool]]]):
 
         with Vertical(classes="dialog-box small-dialog toggle-dialog"):
             yield Label(self.dialog_title, classes="dialog-title")
-            with Vertical(id="toggle-scroll", classes="toggle-scroll"):
+            with Vertical(id="toggle-scroll", classes="dialog-scroll toggle-scroll"):
                 for key, label, desc in self.options:
                     yield CyberSwitch(
                         label,
@@ -1045,7 +1045,7 @@ class SelectDialog(ModalScreen[Optional[str]]):
             yield Label(self.dialog_title, classes="dialog-title")
             if self.prompt:
                 yield Label(self.prompt, classes="dialog-message")
-            with VerticalScroll(classes="select-scroll"):
+            with VerticalScroll(classes="dialog-scroll select-scroll"):
                 with ButtonBar(classes="modules-list"):
                     for i, (label, value) in enumerate(self.choices):
                         is_current = value == self.current_value

@@ -504,15 +504,25 @@ GradientSpinner {
     margin-bottom: 1;
 }
 
-.desc-scroll {
+/* EVERY dialog list / long-body scroll region MUST use this class (future
+   dialogs included) so it sizes to content, caps at 60vh and never
+   collapses to 0 content rows. */
+.dialog-scroll {
     height: auto;
     max-height: 60vh;
     min-height: 4;
     border: round $enh-border;
     background: $enh-surface-2;
-    padding: 0 1;
     margin-bottom: 1;
     overflow-y: auto;
+}
+
+.dialog-scroll:focus {
+    border: round $enh-accent;
+}
+
+.desc-scroll {
+    padding: 0 1;
 }
 
 .desc-text {
@@ -525,13 +535,7 @@ GradientSpinner {
 
 /* --- Toggle (animated switch) dialog --- */
 .toggle-scroll {
-    max-height: 60vh;
-    min-height: 4;
-    border: round $enh-border;
-    background: $enh-surface-2;
     padding: 1 0;
-    margin-bottom: 1;
-    overflow-y: auto;
 }
 
 .toggle-scroll CyberSwitch {
@@ -544,13 +548,7 @@ GradientSpinner {
 
 /* --- Preset-choice select dialog (patch option "values") --- */
 .select-scroll {
-    max-height: 60vh;
-    min-height: 4;
-    border: round $enh-border;
-    background: $enh-surface-2;
     padding: 1 0;
-    margin-bottom: 1;
-    overflow-y: auto;
 }
 
 /* --- Modules dialog (stacked button list) --- */
