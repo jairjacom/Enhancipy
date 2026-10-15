@@ -23,6 +23,18 @@ Screen {
     scrollbar-size-horizontal: 1;
 }
 
+/* The `*` rule above also overrides Textual widget DEFAULT_CSS scrollbar
+   zeros, so Footer must re-zero its own. */
+Footer {
+    scrollbar-size: 0 0;
+}
+
+/* Textual Label is `width: auto` (never clamped to its parent) so long text
+   was cut off instead of wrapped. */
+Label {
+    max-width: 100%;
+}
+
 #cyber-header {
     /* The outer CyberHeader widget does the docking; this inner container
        must stay in normal flow (a nested dock:top collapsed the header
@@ -170,6 +182,11 @@ ButtonBar Button {
     border: round $enh-accent-2;
 }
 
+/* Detail cards pan sideways for content that cannot wrap, so lift the Label cap. */
+.detail-card Label {
+    max-width: initial;
+}
+
 /* Cards that host a ListView size to their content (bounded) instead of
    filling the whole viewport, so cards below them (e.g. changelog) stay
    reachable within the outer ContentContainer's scroll area. */
@@ -236,7 +253,8 @@ Button {
     background: $enh-surface;
     color: $enh-text;
     border: round $enh-border;
-    height: 3;
+    height: auto;
+    min-height: 3;
     min-width: 16;
     max-width: 100%;
     margin: 0 1 1 0;
@@ -334,7 +352,7 @@ ModalScreen {
     width: 85%;
     max-width: 70;
     height: auto;
-    max-height: 85%;
+    max-height: 95%;
     background: $enh-surface;
     border: round $enh-accent;
     padding: 1 2;
@@ -362,11 +380,16 @@ ModalScreen {
     height: auto;
 }
 
+ProgressModal LoadingIndicator {
+    height: 1;
+}
+
 Input {
     background: $enh-surface-2;
     border: round $enh-border;
     color: $enh-accent;
     margin-bottom: 1;
+    scrollbar-size-horizontal: 0;
 }
 
 Input:focus {
@@ -384,7 +407,12 @@ Input:focus {
 }
 
 ProgressBar {
+    width: 100%;
     margin: 1 0;
+}
+
+ProgressBar Bar {
+    width: 1fr;
 }
 
 Bar > .bar--bar {
@@ -413,7 +441,8 @@ Bar > .bar--complete {
 .download-detail {
     color: $enh-muted;
     text-align: center;
-    height: 1;
+    height: auto;
+    min-height: 1;
     margin-top: 0;
     margin-bottom: 0;
 }
@@ -460,9 +489,8 @@ GradientSpinner {
    SMALL CENTRED DIALOGS (patch details / toggles / appearance / modules)
    ==================================================== */
 .small-dialog {
-    width: 60%;
+    width: 85%;
     max-width: 56;
-    max-height: 85%;
 }
 
 .changelog-dialog {
@@ -561,6 +589,7 @@ GradientSpinner {
     color: $enh-accent;
     text-style: bold;
     text-align: center;
+    max-width: initial;
     margin-bottom: 1;
 }
 
