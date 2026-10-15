@@ -145,6 +145,33 @@ class TestDialogLayout(unittest.TestCase):
         self.assertEqual(count, "91 of 92 selected")
         self.assertEqual(results, [items[1:]])
 
+    def test_checklist_deselect_all_then_pick_a_few(self):
+        items = [f"c{i:02d}" for i in range(92)]
+
+        async def scenario():
+            app = EnhancifyApp()
+            results: list = []
+            async with app.run_test(size=SIZE) as pilot:
+                await pilot.pause()
+                await _push(app, pilot, ChecklistDialog("T", "P", items, items), results.append)
+                app.screen.query_one("#btn-deselect-all", Button).press()
+                await pilot.pause()
+                await pilot.pause()
+                count = str(app.screen.query_one("#checklist-count", Label).render())
+                focused_list = app.focused is app.screen.query_one("#checklist", SelectionList)
+                # Cursor is on c00: tick it, move two rows down, tick c02.
+                await pilot.press("space", "down", "down", "space")
+                await pilot.pause()
+                app.screen.query_one("#btn-save", Button).press()
+                await pilot.pause()
+                await pilot.pause()
+            return count, focused_list, results
+
+        count, focused_list, results = _run_async(scenario())
+        self.assertEqual(count, "0 of 92 selected")
+        self.assertTrue(focused_list)
+        self.assertEqual(results, [["c00", "c02"]])
+
     def test_checklist_dialog_blocks_empty_save(self):
         items = [f"c{i:02d}" for i in range(92)]
 

@@ -1121,6 +1121,8 @@ class ChecklistDialog(ModalScreen[Optional[List[str]]]):
                 id="checklist-count",
                 classes="dialog-message",
             )
+            with ButtonBar(classes="dialog-buttons"):
+                yield Button("Deselect all", id="btn-deselect-all", classes="btn-secondary")
             yield SelectionList(
                 *[(item, item, item in self.selected_set) for item in self.items],
                 id="checklist",
@@ -1134,7 +1136,11 @@ class ChecklistDialog(ModalScreen[Optional[List[str]]]):
         self.query_one("#checklist-count", Label).update(self._count_text(len(event.selection_list.selected)))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-save":
+        if event.button.id == "btn-deselect-all":
+            sl = self.query_one("#checklist", SelectionList)
+            sl.deselect_all()
+            sl.focus()
+        elif event.button.id == "btn-save":
             picked = set(self.query_one("#checklist", SelectionList).selected)
             chosen = [i for i in self.items if i in picked]
             if not chosen:
