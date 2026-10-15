@@ -1,5 +1,29 @@
 # EnhanciPy Changelog
 
+## [v1.6.0] — dialogs that fit small screens, language checklist
+
+### Added
+
+- **Pick languages from a checklist.** Options that take a list of language
+  codes (such as "String resources to keep") now open a scrollable checklist
+  with a live "N of 92 selected" count instead of one long text line.
+  "Deselect all" lets you clear everything and tick only the few you want.
+  Saving with nothing ticked is blocked, so you can't accidentally keep
+  every language.
+
+### Fixed
+
+- **Long messages were cut off in dialogs** (for example the install result).
+  Text now wraps to fit the screen.
+- **Scrollbars were drawn over the text field and the bottom key bar.**
+  Both are clean again.
+- **Choice and toggle lists could show as an empty box** on small screens.
+  They now show their rows and scroll.
+- **The "Running DEX Optimization" spinner overflowed its dialog.** It now
+  fits.
+- **The live patch log scrolled sideways on narrow screens.** Long lines now
+  wrap.
+
 ## [v1.5.1] — signing keys that work with every patch source
 
 ### Added
