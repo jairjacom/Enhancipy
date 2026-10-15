@@ -4,6 +4,7 @@ Allows users to customize patch settings (e.g., custom branding name, API URLs, 
 with type-safe input dialogs before launching the patcher.
 """
 
+import re
 from typing import Any, Dict, List, Optional, Set
 
 from rich.text import Text
@@ -15,8 +16,47 @@ from src.config import config
 from src.theme import palette
 from src.patches import patches_mgr
 from src.tui.screens.base import BaseScreen
-from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog, SelectDialog
+from src.tui.widgets.dialogs import ChecklistDialog, ConfirmDialog, InputDialog, MessageDialog, SelectDialog
 from src.tui.widgets.button_bar import ButtonBar
+
+
+_LIST_TOKEN = re.compile(r"^[A-Za-z0-9+_.\-]+$")
+
+
+def _tokens(text: str) -> List[str]:
+    return [t.strip() for t in text.split(",")]
+
+
+def comma_list_items(opt: Dict[str, Any]) -> Optional[List[str]]:
+    """Checklist items for a comma-separated String option, else None.
+
+    Qualifies when type is String, `values` is not a non-empty dict, and the
+    default is a str of >=2 comma-separated, non-empty tokens that all match
+    _LIST_TOKEN and are not all digits (number lists such as double-tap
+    lengths accept custom values, so they keep the text field). Result:
+    default tokens in order, then any extra tokens from the current value
+    (if a str), in their order.
+    """
+    if opt.get("type") != "String":
+        return None
+    values = opt.get("values")
+    if isinstance(values, dict) and values:
+        return None
+    default = opt.get("default")
+    if not isinstance(default, str):
+        return None
+    base = _tokens(default)
+    if len(base) < 2 or not all(t and _LIST_TOKEN.match(t) for t in base):
+        return None
+    if all(t.isdigit() for t in base):
+        return None
+    items = list(base)
+    value = opt.get("value")
+    if isinstance(value, str):
+        for t in _tokens(value):
+            if t and t not in items:
+                items.append(t)
+    return items
 
 
 class OptionsEditScreen(BaseScreen):
@@ -139,6 +179,29 @@ class OptionsEditScreen(BaseScreen):
                     current_value=opt["value"],
                 ),
                 handle_select,
+            )
+        # StringArray options (list default) keep the free-text InputDialog below.
+        elif (items := comma_list_items(opt)):
+            cur = opt["value"]
+            selected = (
+                [t for t in _tokens(cur) if t]
+                if isinstance(cur, str) and cur.strip()
+                else _tokens(opt["default"])
+            )
+
+            def handle_checklist(res: Optional[List[str]]) -> None:
+                if res is not None:
+                    self.options_list[idx]["value"] = ", ".join(res)
+                    self.populate_options()
+
+            self.app.push_screen(
+                ChecklistDialog(
+                    title=f"Edit {title}",
+                    prompt=desc,
+                    items=items,
+                    selected=selected,
+                ),
+                handle_checklist,
             )
         else:
             def handle_input(res: Optional[str]) -> None:

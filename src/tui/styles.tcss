@@ -521,6 +521,27 @@ GradientSpinner {
     border: round $enh-accent;
 }
 
+SelectionList {
+    color: $enh-text;
+}
+
+SelectionList > .selection-list--button,
+SelectionList > .selection-list--button-highlighted {
+    color: $enh-border;
+    background: $enh-border;
+}
+
+SelectionList > .selection-list--button-selected,
+SelectionList > .selection-list--button-selected-highlighted {
+    color: $enh-bg;
+    background: $enh-accent;
+}
+
+SelectionList > .option-list--option-highlighted {
+    background: $enh-row-focus-bg;
+    color: $enh-row-focus-fg;
+}
+
 .desc-scroll {
     padding: 0 1;
 }
