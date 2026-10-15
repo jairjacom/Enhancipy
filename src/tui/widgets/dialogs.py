@@ -1,6 +1,6 @@
 """
 Enhancify Reusable Modal Dialog Widgets
-Provides Confirm, Message, Input, Progress, Download, and Parse modals
+Provides Confirm, Message, Input, Checklist, Progress, Download, and Parse modals
 with cybernetic styling, gradient bars/spinners, and cancel support.
 """
 
@@ -14,7 +14,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, LoadingIndicator, Static
+from textual.widgets import Button, Input, Label, LoadingIndicator, SelectionList, Static
 from src.tui.widgets.button_bar import ButtonBar
 
 from src.tui.widgets.gradient import GradientProgressBar, GradientSpinner
@@ -811,7 +811,7 @@ class PatchDescriptionDialog(ModalScreen[None]):
         with Vertical(classes="dialog-box small-dialog"):
             yield Label("| Patch Details |", classes="dialog-title")
             yield Label(f"[{name_style}]{self.patch_name}[/]{badge}", id="patch-dialog-name")
-            with VerticalScroll(id="patch-desc-scroll", classes="desc-scroll"):
+            with VerticalScroll(id="patch-desc-scroll", classes="dialog-scroll desc-scroll"):
                 yield Label(self.description, classes="dialog-message desc-text")
             with ButtonBar(classes="dialog-buttons"):
                 yield Button("Confirm", id="btn-confirm", classes="btn-primary")
@@ -870,7 +870,7 @@ class ChangelogDialog(ModalScreen[Optional[bool]]):
         with Vertical(classes="dialog-box changelog-dialog"):
             yield Label("| Changelog |", classes="dialog-title")
             yield Label(self._meta_text(), classes="dialog-message changelog-meta")
-            with VerticalScroll(id="changelog-scroll", classes="desc-scroll"):
+            with VerticalScroll(id="changelog-scroll", classes="dialog-scroll desc-scroll"):
                 yield Label(
                     self.changelog if self.changelog else "No changelog provided for this release.",
                     classes="dialog-message desc-text",
@@ -925,7 +925,7 @@ class ToggleSwitchDialog(ModalScreen[Optional[Dict[str, bool]]]):
 
         with Vertical(classes="dialog-box small-dialog toggle-dialog"):
             yield Label(self.dialog_title, classes="dialog-title")
-            with Vertical(id="toggle-scroll", classes="toggle-scroll"):
+            with Vertical(id="toggle-scroll", classes="dialog-scroll toggle-scroll"):
                 for key, label, desc in self.options:
                     yield CyberSwitch(
                         label,
@@ -1045,7 +1045,7 @@ class SelectDialog(ModalScreen[Optional[str]]):
             yield Label(self.dialog_title, classes="dialog-title")
             if self.prompt:
                 yield Label(self.prompt, classes="dialog-message")
-            with VerticalScroll(classes="select-scroll"):
+            with VerticalScroll(classes="dialog-scroll select-scroll"):
                 with ButtonBar(classes="modules-list"):
                     for i, (label, value) in enumerate(self.choices):
                         is_current = value == self.current_value
@@ -1065,6 +1065,90 @@ class SelectDialog(ModalScreen[Optional[str]]):
         if btn_id and btn_id.startswith("choice-"):
             idx = int(btn_id[len("choice-"):])
             self.dismiss(self.choices[idx][1])
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+# ---------------------------------------------------------------------------
+# Checklist dialog (comma-separated list options, e.g. language codes)
+# ---------------------------------------------------------------------------
+
+class ChecklistDialog(ModalScreen[Optional[List[str]]]):
+    """
+    Centred multi-select checklist for list-valued options.
+
+    Result: the chosen items in original `items` order, or None if cancelled.
+    At least one item must be selected to Save.
+    """
+
+    # App AUTO_FOCUS ("Button, ListView, Input") would focus Save and scroll
+    # the dialog to the bottom; start on the list instead.
+    AUTO_FOCUS = "#checklist"
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=False),
+    ]
+
+    def __init__(
+        self,
+        title: str,
+        prompt: str,
+        items: List[str],
+        selected: List[str],
+        save_label: str = "💾 Save",
+        cancel_label: str = "Cancel",
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.dialog_title = title
+        self.prompt = prompt
+        self.items = items
+        self.selected_set = set(selected)
+        self.save_label = save_label
+        self.cancel_label = cancel_label
+
+    def _count_text(self, n: int) -> str:
+        return f"{n} of {len(self.items)} selected"
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog-box small-dialog"):
+            yield Label(self.dialog_title, classes="dialog-title")
+            if self.prompt:
+                yield Label(self.prompt, classes="dialog-message")
+            yield Label(
+                self._count_text(sum(1 for i in self.items if i in self.selected_set)),
+                id="checklist-count",
+                classes="dialog-message",
+            )
+            with ButtonBar(classes="dialog-buttons"):
+                yield Button("Deselect all", id="btn-deselect-all", classes="btn-secondary")
+            yield SelectionList(
+                *[(item, item, item in self.selected_set) for item in self.items],
+                id="checklist",
+                classes="dialog-scroll",
+            )
+            with ButtonBar(classes="dialog-buttons"):
+                yield Button(self.save_label, id="btn-save", classes="btn-primary")
+                yield Button(self.cancel_label, id="btn-cancel", classes="btn-secondary")
+
+    def on_selection_list_selected_changed(self, event: SelectionList.SelectedChanged) -> None:
+        self.query_one("#checklist-count", Label).update(self._count_text(len(event.selection_list.selected)))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-deselect-all":
+            sl = self.query_one("#checklist", SelectionList)
+            sl.deselect_all()
+            sl.focus()
+        elif event.button.id == "btn-save":
+            picked = set(self.query_one("#checklist", SelectionList).selected)
+            chosen = [i for i in self.items if i in picked]
+            if not chosen:
+                self.app.push_screen(MessageDialog("Nothing selected", "Select at least one item."))
+                return
+            self.dismiss(chosen)
+        elif event.button.id == "btn-cancel":
+            self.action_cancel()
 
     def action_cancel(self) -> None:
         self.dismiss(None)
