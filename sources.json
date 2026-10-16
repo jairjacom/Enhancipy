@@ -1,41 +1,9 @@
 [
   {
-    "source": "ReVanced",
-    "repository": "ReVanced/ravanced-patches",
-    "api": {
-      "json": "",
-      "version": null
-    }
-  },
-  {
-    "source": "De-Vanced",
-    "repository": "RookieEnough/De-Vanced",
-    "api": {
-      "json": "https://raw.githubusercontent.com/RookieEnough/De-Vanced/refs/heads/main/patches-list.json",
-      "version": null
-    }
-  },
-  {
     "source": "Anddea",
     "repository": "anddea/revanced-patches",
     "api": {
       "json": "https://raw.githubusercontent.com/anddea/revanced-patches/refs/heads/main/patches-list.json",
-      "version": null
-    }
-  },
-  {
-    "source": "ReVancedExperiments",
-    "repository": "Aunali321/ReVancedExperiments",
-    "api": {
-      "json": "",
-      "version": null
-    }
-  },
-  {
-    "source": "hoo-dles",
-    "repository": "hoo-dles/morphe-patches",
-    "api": {
-      "json": "https://raw.githubusercontent.com/hoo-dles/morphe-patches/refs/heads/main/patches-list.json",
       "version": null
     }
   },
@@ -48,58 +16,18 @@
     }
   },
   {
-    "source": "Rufusin-RVXM",
-    "repository": "rufusin/revanced-patches",
+    "source": "hoo-dles",
+    "repository": "hoo-dles/morphe-patches",
     "api": {
-      "json": "https://raw.githubusercontent.com/rufusin/revanced-patches/refs/heads/main/patches.json",
+      "json": "https://raw.githubusercontent.com/hoo-dles/morphe-patches/refs/heads/main/patches-list.json",
       "version": null
     }
   },
   {
-    "source": "PikoTwitter",
-    "repository": "crimera/piko",
+    "source": "NewX",
+    "repository": "crimera/piko-newx",
     "api": {
-      "json": "https://raw.githubusercontent.com/crimera/piko/refs/heads/main/patches-list.json",
-      "version": null
-    }
-  },
-  {
-    "source": "AmpleRevanced",
-    "repository": "AmpleReVanced/revanced-patches",
-    "api": {
-      "json": "",
-      "version": null
-    }
-  },
-  {
-    "source": "Adobo",
-    "repository": "jkennethcarino/adobo",
-    "api": {
-      "json": "https://raw.githubusercontent.com/jkennethcarino/adobo/refs/heads/main/patches-list.json",
-      "version": null
-    }
-  },
-  {
-    "source": "Paresh-Patches",
-    "repository": "Paresh-Maheshwari/paresh-patches",
-    "api": {
-      "json": "https://raw.githubusercontent.com/Paresh-Maheshwari/paresh-patches/refs/heads/main/patches-list.json",
-      "version": null
-    }
-  },
-  {
-    "source": "brossh",
-    "repository": "brosssh/morphe-patches",
-    "api": {
-      "json": "https://raw.githubusercontent.com/brosssh/morphe-patches/refs/heads/main/patches-list.json",
-      "version": null
-    }
-  },
-  {
-    "source": "Doom-Patches",
-    "repository": "rushiranpise/morphe-patches",
-    "api": {
-      "json": "https://raw.githubusercontent.com/rushiranpise/morphe-patches/refs/heads/main/patches-list.json",
+      "json": "https://raw.githubusercontent.com/crimera/piko-newx/refs/heads/main/patches-bundle.json",
       "version": null
     }
   }

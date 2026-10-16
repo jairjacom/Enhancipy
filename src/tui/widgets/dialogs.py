@@ -1170,7 +1170,7 @@ class ConfigModulesDialog(ModalScreen[Optional[str]]):
     ]
 
     MODULES: List[Tuple[str, str]] = [
-        ("custom_sources", "➕ Custom Sources"),
+        ("custom_sources", "🛠️ Manage Sources"),
         ("keystore", "🔑 Keystore Manager"),
         ("token", "🎫 GitHub Token"),
         ("apkmirror", "🌐 APKMirror Scraper Config"),

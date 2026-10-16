@@ -221,7 +221,6 @@ class TestLocalSources(unittest.TestCase):
         self.sm.save_local_source("Jair", "1.0.0", "1.15.1")
         s = self.sm.get_local_source("Jair")
         self.assertTrue(s.is_local)
-        self.assertFalse(s.is_custom)
         self.assertEqual(s.bundle_version, "1.0.0")
         self.assertIsNone(self.sm.get_local_source("Anddea"))
         self.sm.delete_local_source("Jair")

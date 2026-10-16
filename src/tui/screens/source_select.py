@@ -30,7 +30,7 @@ class SourceSelectScreen(BaseScreen):
     BINDINGS = [
         ("p", "proceed", "Proceed to Apps"),
         ("r", "refresh_tags", "Refresh Tags"),
-        ("c", "custom_sources", "Custom Sources"),
+        ("c", "custom_sources", "Manage Sources"),
         ("i", "import_patch_file", "Import Patch File"),
         ("b", "back", "Back"),
         ("escape", "back", "Back"),
@@ -66,7 +66,7 @@ class SourceSelectScreen(BaseScreen):
                 if self.is_patch_flow or is_multi:
                     yield Button("🚀 Proceed to Apps [P]", id="btn-proceed", classes="btn-primary")
                 yield Button("🔄 Refresh Tags [R]", id="btn-refresh-tags", classes="btn-primary" if not (self.is_patch_flow or is_multi) else "")
-                yield Button("➕ Custom Sources [C]", id="btn-custom-sources")
+                yield Button("🛠️ Manage Sources [C]", id="btn-custom-sources")
                 yield Button("📂 Import Patch File [I]", id="btn-import-patch")
                 yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
@@ -78,6 +78,10 @@ class SourceSelectScreen(BaseScreen):
         if not self.selected_multi_sources:
             cur = config.get("SOURCE", "Anddea")
             self.selected_multi_sources = [cur]
+
+    def on_screen_resume(self) -> None:
+        names = {s.source for s in sources_mgr.get_all_sources()}
+        self.selected_multi_sources = [s for s in self.selected_multi_sources if s in names] or [config.get("SOURCE", "Anddea")]
         self.populate_sources()
 
     def populate_sources(self) -> None:
@@ -92,6 +96,8 @@ class SourceSelectScreen(BaseScreen):
         sources_list.clear()
 
         pal = palette()
+        if not sources:
+            sources_list.append(ListItem(Label(Text("No sources yet. Open Manage Sources [C] to add one.", style=pal["muted"]))))
         for s in sources:
             if s.is_local:
                 version_str = s.bundle_version if s.bundle_version.startswith("v") else f"v{s.bundle_version}"
@@ -124,9 +130,6 @@ class SourceSelectScreen(BaseScreen):
                 txt.append(" [PRE]", style=f"bold {pal['warning']}")
             else:
                 txt.append(f" ({version_str})", style=pal["accent_2"])
-
-            if s.is_custom:
-                txt.append(" [CUSTOM]", style=f"bold {pal['tag']}")
 
             item = ListItem(Label(txt))
             item.source_name = s.source
@@ -194,6 +197,9 @@ class SourceSelectScreen(BaseScreen):
 
     def action_proceed(self) -> None:
         """Proceed to app selection with selected source(s)."""
+        if not sources_mgr.get_all_sources():
+            self.app.push_screen(MessageDialog("No Sources", "Add a source in Manage Sources [C] first."))
+            return
         is_multi = config.is_on("ENABLE_MULTIPATCHER")
         if is_multi and self.selected_multi_sources:
             config.set("SOURCE", self.selected_multi_sources[0])

@@ -1,6 +1,6 @@
 """
 Enhancify Sources Management Module
-Handles sources.json, user_sources.json, tag fetching, caching, and custom source CRUD.
+sources.json is a starter pack seeded once per name into user_sources.json; user_sources.json (remote) and local_sources.json (imported .mpp) are the only listed sources.
 """
 
 import datetime
@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from src.config import config
+from src.config import DEFAULT_CONFIG, config
 from src.environment import env
 
 
@@ -37,7 +37,6 @@ class SourceInfo:
     json_url: str = ""
     version: Optional[str] = None
     gitlab_id: Optional[str] = None
-    is_custom: bool = False
     latest_tag: str = ""
     is_local: bool = False
     bundle_version: str = ""
@@ -59,19 +58,21 @@ class SourceInfo:
 
 
 class SourcesManager:
-    """Manages built-in and custom patch sources."""
+    """Manages remote and imported patch sources."""
 
     def __init__(self, workspace_dir: Optional[Path] = None):
         self.workspace_dir = workspace_dir or Path(__file__).resolve().parent.parent
         self.sources_file = self.workspace_dir / "sources.json"
         self.user_sources_file = self.workspace_dir / "user_sources.json"
         self.local_sources_file = self.workspace_dir / "local_sources.json"
+        self.seeded_sources_file = self.workspace_dir / "seeded_sources.json"
         self.tag_file = self.workspace_dir / "tag.json"
         self._ensure_files()
 
     def _ensure_files(self) -> None:
         if not self.user_sources_file.exists():
             self.user_sources_file.write_text("[]\n", encoding="utf-8")
+        self._seed_starter_sources()
         if not self.tag_file.exists():
             self._init_tag_file()
 
@@ -89,29 +90,10 @@ class SourcesManager:
         self.tag_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def get_all_sources(self) -> List[SourceInfo]:
-        """Load and merge sources.json and user_sources.json."""
+        """Load user_sources.json (remote) and local_sources.json (imported)."""
         sources: List[SourceInfo] = []
-        
-        # Load built-in sources
-        if self.sources_file.exists():
-            try:
-                builtin = json.loads(self.sources_file.read_text(encoding="utf-8"))
-                for item in builtin:
-                    api = item.get("api", {})
-                    sources.append(
-                        SourceInfo(
-                            source=item.get("source", ""),
-                            repository=item.get("repository", ""),
-                            json_url=api.get("json", "") or "",
-                            version=api.get("version"),
-                            gitlab_id=item.get("gitlab"),
-                            is_custom=False,
-                        )
-                    )
-            except Exception:
-                pass
 
-        # Load user custom sources
+        # Load remote sources
         if self.user_sources_file.exists():
             try:
                 user_src = json.loads(self.user_sources_file.read_text(encoding="utf-8"))
@@ -124,7 +106,6 @@ class SourcesManager:
                             json_url=api.get("json", "") or "",
                             version=api.get("version"),
                             gitlab_id=item.get("gitlab"),
-                            is_custom=True,
                         )
                     )
             except Exception:
@@ -138,7 +119,6 @@ class SourcesManager:
                         SourceInfo(
                             source=item["source"],
                             repository="",
-                            is_custom=False,
                             is_local=True,
                             bundle_version=item["version"],
                             patcher_version=item.get("patcher_version", ""),
@@ -280,6 +260,62 @@ class SourcesManager:
             return True, f"Source '{name}' deleted successfully!"
         except Exception as e:
             return False, f"Failed to delete source: {e}"
+
+    def _seed_starter_sources(self) -> None:
+        """Copy each starter from sources.json into user_sources.json the first time its name is seen."""
+        try:
+            starters = json.loads(self.sources_file.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        if not isinstance(starters, list):
+            return
+        try:
+            seeded = json.loads(self.seeded_sources_file.read_text(encoding="utf-8"))
+            seeded = set(seeded) if isinstance(seeded, list) else set()
+        except Exception:
+            seeded = set()
+        try:
+            user = json.loads(self.user_sources_file.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        if not isinstance(user, list):
+            return
+        try:
+            local_names = [str(e.get("source", "")) for e in self._read_local_entries()]
+        except Exception:
+            local_names = []
+        taken = {str(e.get("source", "")).lower() for e in user if isinstance(e, dict)}
+        taken.update(n.lower() for n in local_names)
+
+        seeded_before = len(seeded)
+        appended = False
+        for item in starters:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("source")
+            if not isinstance(name, str) or not name or not isinstance(item.get("repository"), str):
+                continue
+            if name in seeded:
+                continue
+            seeded.add(name)
+            if name.lower() not in taken:
+                user.append(item)
+                taken.add(name.lower())
+                appended = True
+
+        try:
+            if appended:
+                self.user_sources_file.write_text(json.dumps(user, indent=2), encoding="utf-8")
+            if len(seeded) > seeded_before:
+                self.seeded_sources_file.write_text(json.dumps(sorted(seeded), indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def fallback_source(self) -> str:
+        """Source to activate when the active one is gone."""
+        names = [s.source for s in self.get_all_sources()]
+        default = DEFAULT_CONFIG["SOURCE"]
+        return default if (default in names or not names) else names[0]
 
     # --- Tag Fetching & Caching ---
 
@@ -498,11 +534,7 @@ class SourcesManager:
                 progress_callback(idx + 1, total, s.source)
             try:
                 lat, pre = self.fetch_source_tags(s)
-                tags_cache[s.source] = {
-                    "latest": lat,
-                    "prerelease": pre,
-                    "custom": s.is_custom,
-                }
+                tags_cache[s.source] = {"latest": lat, "prerelease": pre}
             except Exception:
                 pass
 
