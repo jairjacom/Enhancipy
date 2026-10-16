@@ -57,6 +57,16 @@ class BundleManifest:
     patcher_version: str
 
 
+@dataclass
+class PatchRelease:
+    tag: str
+    published: str  # "YYYY-MM-DD", "" if missing
+    prerelease: bool
+    asset_name: str
+    url: str
+    size: int
+
+
 def _version_triple(v: str) -> Optional[Tuple[int, int, int]]:
     """Parse leading major.minor[.patch]; prerelease suffixes are ignored."""
     m = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?", v or "")
@@ -422,6 +432,75 @@ class AssetsManager:
             return tag, url, size
         except Exception:
             return None
+
+    # --- Older patch releases (pinned local import) ---
+
+    def fetch_recent_patch_releases(
+        self, repo: str, want_prerelease: bool, limit: int = 5
+    ) -> Optional[List[PatchRelease]]:
+        """Return the newest ``limit`` releases of ``repo`` shipping a .mpp file.
+
+        Only releases whose prerelease flag matches ``want_prerelease`` are kept.
+        Returns None when the request fails; an empty list means no match.
+        """
+        try:
+            r = requests.get(
+                f"https://api.github.com/repos/{repo}/releases?per_page=100",
+                headers=self._get_github_headers(),
+                timeout=8,
+            )
+            if r.status_code != 200:
+                return None
+            payload = r.json()
+        except Exception:
+            return None
+        if not isinstance(payload, list):
+            return None
+
+        found: List[PatchRelease] = []
+        for rel in payload:
+            if not isinstance(rel, dict) or rel.get("draft") is True:
+                continue
+            if bool(rel.get("prerelease")) != want_prerelease:
+                continue
+            asset = next(
+                (
+                    a for a in (rel.get("assets") or [])
+                    if isinstance(a, dict) and str(a.get("name", "")).endswith(".mpp")
+                ),
+                None,
+            )
+            if asset is None:
+                continue
+            found.append(
+                PatchRelease(
+                    tag=rel.get("tag_name", "") or "",
+                    published=(rel.get("published_at") or "")[:10],
+                    prerelease=bool(rel.get("prerelease")),
+                    asset_name=asset["name"],
+                    url=asset.get("browser_download_url", "") or "",
+                    size=int(asset.get("size") or 0),
+                )
+            )
+            if len(found) >= limit:
+                break
+        return found
+
+    def download_patch_release(
+        self,
+        rel: PatchRelease,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    ) -> Optional[Path]:
+        """Download ``rel``'s .mpp into a single scratch dir outside assets/.
+
+        The dir is wiped first, so at most one download lingers.
+        """
+        target_dir = Path(tempfile.gettempdir()) / "enhancipy-releases"
+        shutil.rmtree(target_dir, ignore_errors=True)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / rel.asset_name
+        result = download_file_ex(rel.url, target, rel.size, progress_callback)
+        return target if result == DownloadResult.OK else None
 
     # --- Local (imported) patch bundles ---
 

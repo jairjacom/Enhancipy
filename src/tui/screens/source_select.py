@@ -5,7 +5,7 @@ and initiate the app patching flow.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from rich.text import Text
 from textual import work
@@ -18,7 +18,8 @@ from src.config import config
 from src.sources import SourceInfo, sanitize_local_source_name, sources_mgr
 from src.tui.screens.base import BaseScreen
 from src.tui.screens.file_picker import FilePickerScreen
-from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog, ProgressModal
+from src.tui.screens.older_releases import OlderReleasesScreen
+from src.tui.widgets.dialogs import ConfirmDialog, InputDialog, MessageDialog, ProgressModal, SelectDialog
 from src.tui.widgets.button_bar import ButtonBar
 from src.theme import palette
 from src.utils import DownloadResult, download_file_ex
@@ -32,6 +33,7 @@ class SourceSelectScreen(BaseScreen):
         ("r", "refresh_tags", "Refresh Tags"),
         ("c", "custom_sources", "Manage Sources"),
         ("i", "import_patch_file", "Import Patch File"),
+        ("o", "older_versions", "Older Versions"),
         ("b", "back", "Back"),
         ("escape", "back", "Back"),
     ]
@@ -68,6 +70,7 @@ class SourceSelectScreen(BaseScreen):
                 yield Button("🔄 Refresh Tags [R]", id="btn-refresh-tags", classes="btn-primary" if not (self.is_patch_flow or is_multi) else "")
                 yield Button("🛠️ Manage Sources [C]", id="btn-custom-sources")
                 yield Button("📂 Import Patch File [I]", id="btn-import-patch")
+                yield Button("🕘 Older Versions [O]", id="btn-older-versions")
                 yield Button("🔙 Back [B]", id="btn-back", classes="btn-secondary")
 
             yield Label("", id="channel-hint", classes="card-desc")
@@ -192,6 +195,8 @@ class SourceSelectScreen(BaseScreen):
             self.action_custom_sources()
         elif btn_id == "btn-import-patch":
             self.action_import_patch_file()
+        elif btn_id == "btn-older-versions":
+            self.action_older_versions()
         elif btn_id == "btn-back":
             self.action_back()
 
@@ -232,7 +237,40 @@ class SourceSelectScreen(BaseScreen):
             FilePickerScreen(allowed_exts={".mpp"}), self._on_patch_file_picked
         )
 
-    def _on_patch_file_picked(self, path: Optional[Path]) -> None:
+    # --- Older Versions: download a past release, then reuse the import flow ---
+
+    def action_older_versions(self) -> None:
+        remote = [s for s in sources_mgr.get_all_sources() if not s.is_local]
+        if not remote:
+            self.app.push_screen(MessageDialog("No Sources", "Add a source in Manage Sources [C] first."))
+            return
+        if len(remote) == 1:
+            self._open_older_releases(remote[0])
+            return
+
+        def _on_pick(name: Optional[str]) -> None:
+            src = sources_mgr.get_source(name) if name else None
+            if src is not None:
+                self._open_older_releases(src)
+
+        self.app.push_screen(
+            SelectDialog(
+                "Older Versions",
+                "Pick the source to browse:",
+                [(s.source, s.source) for s in remote],
+                current_value=config.get("SOURCE"),
+            ),
+            _on_pick,
+        )
+
+    def _open_older_releases(self, src: SourceInfo) -> None:
+        self.app.push_screen(OlderReleasesScreen(src), self._on_older_release_downloaded)
+
+    def _on_older_release_downloaded(self, result: Optional[Tuple[Path, str]]) -> None:
+        if result:
+            self._on_patch_file_picked(result[0], default_name=result[1])
+
+    def _on_patch_file_picked(self, path: Optional[Path], default_name: Optional[str] = None) -> None:
         if path is None:
             return
         try:
@@ -250,7 +288,7 @@ class SourceSelectScreen(BaseScreen):
             InputDialog(
                 "Import Patch File",
                 prompt,
-                initial_value=sanitize_local_source_name(manifest.name),
+                initial_value=sanitize_local_source_name(default_name or manifest.name),
             ),
             lambda name: self._on_import_name(path, manifest, name),
         )
