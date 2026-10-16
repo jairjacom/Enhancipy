@@ -1,5 +1,20 @@
 # EnhanciPy Changelog
 
+## [v1.8.0] — older patch versions
+
+### Added
+
+- **Older Versions.** On the source list, press O (or tap "Older Versions")
+  to pick a remote source and see its 5 newest releases. Choose one and it is
+  downloaded and imported as a local source that stays on that version until
+  you delete it in Manage Sources. The list follows your Pre-release
+  setting, and a help button explains the steps.
+
+### Removed
+
+- **Bundle Patcher (Experimental).** It only saved links that nothing else
+  used. Use Older Versions or Import Patch File instead.
+
 ## [v1.7.0] — one list of sources you control
 
 ### Added
