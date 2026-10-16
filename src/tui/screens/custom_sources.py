@@ -1,6 +1,6 @@
 """
-Enhancify Custom Sources Management Screen
-Allows adding, editing, and deleting user custom patch sources.
+Enhancify Manage Sources Screen
+Add/delete remote patch sources and delete imported patch files.
 """
 
 from typing import List, Optional
@@ -11,7 +11,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Label, ListItem, ListView
 
 from src.assets import assets_mgr
-from src.config import DEFAULT_CONFIG, config
+from src.config import config
 from src.sources import SourceInfo, sources_mgr
 from src.tui.screens.base import BaseScreen
 from src.theme import palette
@@ -29,10 +29,14 @@ class CustomSourcesScreen(BaseScreen):
         ("escape", "back", "Back"),
     ]
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.managed_sources: List[SourceInfo] = []
+
     def compose_content(self) -> ComposeResult:
         with Vertical(classes="card list-card"):
-            yield Label("➕ Custom Sources Management", classes="card-title")
-            yield Label("Add or manage custom ReVanced / Morphe patch repositories and imported patch files:", classes="card-desc")
+            yield Label("🛠️ Manage Sources", classes="card-title")
+            yield Label("Add or delete patch repositories. Imported patch files are listed here too:", classes="card-desc")
 
             with ButtonBar():
                 yield Button("➕ Add New Source [A]", id="btn-add", classes="btn-primary")
@@ -45,19 +49,18 @@ class CustomSourcesScreen(BaseScreen):
         self.populate_custom_sources()
 
     def populate_custom_sources(self) -> None:
-        """Populate list of custom sources."""
+        """Populate list of all sources."""
         c_list = self.query_one("#custom-sources-list", ListView)
         c_list.clear()
 
-        all_sources = sources_mgr.get_all_sources()
-        custom_sources = [s for s in all_sources if s.is_custom or s.is_local]
+        self.managed_sources = sources_mgr.get_all_sources()
 
-        if not custom_sources:
-            c_list.append(ListItem(Label(Text("No custom or imported sources yet. Click 'Add New Source' or use Import Patch File on the source list.", style=palette()["muted"]))))
+        if not self.managed_sources:
+            c_list.append(ListItem(Label(Text("No sources yet. Click 'Add New Source' or use Import Patch File on the source list.", style=palette()["muted"]))))
             return
 
         pal = palette()
-        for idx, s in enumerate(custom_sources):
+        for idx, s in enumerate(self.managed_sources):
             txt = Text()
             if s.is_local:
                 txt.append("📂 ", style=f"bold {pal['tag']}")
@@ -80,10 +83,15 @@ class CustomSourcesScreen(BaseScreen):
         idx = getattr(event.item, "source_idx", None)
         if idx is None and 0 <= event.index:
             idx = event.index
-        if idx is not None:
-            custom_sources = [s for s in sources_mgr.get_all_sources() if s.is_custom or s.is_local]
-            if 0 <= idx < len(custom_sources):
-                self.prompt_source_actions(custom_sources[idx])
+        if idx is not None and 0 <= idx < len(self.managed_sources):
+            self.prompt_source_actions(self.managed_sources[idx])
+
+    def _forget_source(self, name: str) -> None:
+        """Drop a deleted source from the active selection."""
+        remaining = [s for s in self.app.multi_sources if s != name]
+        if config.get("SOURCE") == name:
+            config.set("SOURCE", remaining[0] if remaining else sources_mgr.fallback_source())
+        self.app.multi_sources = remaining or [config.get("SOURCE")]
 
     def prompt_source_actions(self, source: SourceInfo) -> None:
         """Show Edit / Delete confirmation."""
@@ -93,11 +101,10 @@ class CustomSourcesScreen(BaseScreen):
             if source.is_local:
                 ok, msg = sources_mgr.delete_local_source(source.source)
                 assets_mgr.remove_local_bundle(source.source)
-                if config.get("SOURCE") == source.source:
-                    config.set("SOURCE", DEFAULT_CONFIG["SOURCE"])
-                    self.app.multi_sources = [DEFAULT_CONFIG["SOURCE"]]
             else:
                 ok, msg = sources_mgr.delete_custom_source(source.source)
+            if ok:
+                self._forget_source(source.source)
             self.populate_custom_sources()
             self.app.push_screen(MessageDialog("Deleted", msg))
 
@@ -169,8 +176,11 @@ class CustomSourcesScreen(BaseScreen):
             "2. Repository: Format 'owner/repo' containing patch releases.\n"
             "3. JSON URL (Optional): Raw link to patches-list.json file.\n"
             "   Adding this speeds up patch metadata loading."
+            "\n\nStarter sources (Anddea, MorpheApp, hoo-dles, NewX) are ordinary sources: "
+            "delete any you don't use and they won't come back after updates. "
+            "Imported patch files appear here too and can be deleted the same way."
         )
-        self.app.push_screen(MessageDialog("Custom Sources Guide", help_text))
+        self.app.push_screen(MessageDialog("Manage Sources Guide", help_text))
 
     def action_back(self) -> None:
         self.app.pop_screen()

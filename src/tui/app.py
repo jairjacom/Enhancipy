@@ -13,6 +13,7 @@ from textual.screen import Screen
 
 from src.config import config
 from src.environment import env
+from src.sources import sources_mgr
 from src.theme import THEME_MAP, css_variables, get_current_theme, palette
 from src.tui.scrollbar import LineScrollBarRender
 from src.tui.screens.app_select import AppSelectScreen
@@ -112,6 +113,9 @@ class EnhancifyApp(App):
         self.force_root = force_root
         self.force_rish = force_rish
         self.selected_app: Dict[str, Any] = {}
+        names = {s.source for s in sources_mgr.get_all_sources()}
+        if names and config.get("SOURCE", "Anddea") not in names:
+            config.set("SOURCE", sources_mgr.fallback_source())
         self.multi_sources: List[str] = [config.get("SOURCE", "Anddea")]
 
     def get_css_variables(self) -> Dict[str, str]:

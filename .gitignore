@@ -15,6 +15,7 @@ keystore/
 .config
 user_sources.json
 local_sources.json
+seeded_sources.json
 tag.json
 cli_detection.json
 bundle_patcher_sources.json
