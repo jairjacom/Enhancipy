@@ -12,7 +12,6 @@ from src.antisplit import AntiSplitManager
 from src.config import ConfigManager
 from src.environment import Environment
 from src.features import (
-    BundlePatcherManager,
     DEPENDENCIES_SUBDIR,
     GMSCORE_PROVIDERS,
     GmsCoreManager,
@@ -110,13 +109,6 @@ class TestEnhancifyCore(unittest.TestCase):
         am = AntiSplitManager(self.workspace)
         bucket = am.get_closest_dpi_bucket()
         self.assertIn(bucket, ["ldpi", "mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi", "nodpi"])
-
-    def test_bundle_manager(self):
-        bm = BundlePatcherManager(self.workspace)
-        self.assertEqual(len(bm.get_bundle_sources()), 0)
-        bm.save_bundle_source("brosssh", "https://example.com/brosssh.json")
-        sources = bm.get_bundle_sources()
-        self.assertIn("brosssh", sources)
 
     def test_storage_ops(self):
         so = StorageOperations(self.workspace)

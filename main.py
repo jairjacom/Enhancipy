@@ -60,7 +60,6 @@ async def run_smoke_tests() -> bool:
                     "dependency_select_screen",
                     "gmscore_screen",
                     "pothelper_screen",
-                    "bundle_patcher_screen",
                     "unmount_screen",
                 ]
 
