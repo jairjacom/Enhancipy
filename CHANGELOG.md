@@ -1,5 +1,24 @@
 # EnhanciPy Changelog
 
+## [v1.7.0] — one list of sources you control
+
+### Added
+
+- **Manage Sources replaces Custom Sources.** One screen lists every source,
+  both patch repositories and imported patch files. Add or delete any of
+  them from there.
+
+### Fixed
+
+- **The source list no longer carries defaults you never use.** It starts
+  with Anddea, MorpheApp, hoo-dles and NewX. Delete the ones you don't want
+  and they stay gone after updates. If your active source was one of the
+  removed defaults, the app switches to Anddea.
+- **Deleting the active source now picks a valid one** instead of leaving
+  a missing source selected.
+- **Source list is empty-safe.** With no sources, the list explains how to
+  add one and "Proceed" tells you to add a source first.
+
 ## [v1.6.0] — dialogs that fit small screens, language checklist
 
 ### Added
