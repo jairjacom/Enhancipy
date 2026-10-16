@@ -18,7 +18,6 @@ from src.theme import THEME_MAP, css_variables, get_current_theme, palette
 from src.tui.scrollbar import LineScrollBarRender
 from src.tui.screens.app_select import AppSelectScreen
 from src.tui.screens.boot_screen import BootScreen
-from src.tui.screens.bundle_patcher import BundlePatcherScreen
 from src.tui.screens.custom_sources import CustomSourcesScreen
 from src.tui.screens.dependency_select import DependencySelectScreen
 from src.tui.screens.gmscore import GmsCoreScreen
@@ -89,7 +88,6 @@ class EnhancifyApp(App):
         "dependency_select_screen": DependencySelectScreen,
         "gmscore_screen": GmsCoreScreen,
         "pothelper_screen": PotHelperScreen,
-        "bundle_patcher_screen": BundlePatcherScreen,
         "unmount_screen": UnmountScreen,
     }
 

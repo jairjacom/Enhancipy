@@ -48,7 +48,6 @@ class ConfigManager:
         self.tag_file = self.workspace_dir / "tag.json"
         self.cli_detection_file = self.workspace_dir / "cli_detection.json"
         self.user_sources_file = self.workspace_dir / "user_sources.json"
-        self.bundle_sources_file = self.workspace_dir / "bundle_patcher_sources.json"
         self.sources_file = self.workspace_dir / "sources.json"
         
         # In-memory config dictionary

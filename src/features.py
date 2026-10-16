@@ -1,6 +1,6 @@
 """
 Enhancify Special Features Module
-Handles Dependency downloading (GmsCore / PotHelper), Bundle Patcher,
+Handles Dependency downloading (GmsCore / PotHelper),
 Keystore Generation/Management, Storage Cleanups, Stock App Backups,
 and Specifications/Changelog.
 """
@@ -235,56 +235,6 @@ class PotHelperManager:
         return download_file_ex(
             info["url"], target_path, info["size"], progress_callback, cancel_event=cancel_event
         )
-
-
-# ==========================================
-# 2. Bundle Patcher Manager
-# ==========================================
-
-class BundlePatcherManager:
-    """Manages custom bundle JSON URLs and sources."""
-
-    def __init__(self, workspace_dir: Optional[Path] = None):
-        self.workspace_dir = workspace_dir or Path(__file__).resolve().parent.parent
-        self.sources_file = self.workspace_dir / "bundle_patcher_sources.json"
-        self._ensure_file()
-
-    def _ensure_file(self) -> None:
-        if not self.sources_file.exists():
-            self.sources_file.write_text("{}\n", encoding="utf-8")
-
-    def get_bundle_sources(self) -> Dict[str, str]:
-        """Read saved bundle sources."""
-        try:
-            return json.loads(self.sources_file.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-
-    def save_bundle_source(self, name: str, url: str) -> bool:
-        """Save a new bundle source."""
-        try:
-            sources = self.get_bundle_sources()
-            sources[name] = url
-            self.sources_file.write_text(json.dumps(sources, indent=2), encoding="utf-8")
-            return True
-        except Exception:
-            return False
-
-    def validate_and_fetch_bundle_url(self, url: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-        """Validate and fetch a bundle JSON from URL."""
-        headers = {"User-Agent": USER_AGENT_GITHUB}
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code != 200:
-                return False, f"HTTP Error {r.status_code}", None
-            data = r.json()
-            ver = data.get("version")
-            dl_url = data.get("download_url")
-            if not ver or not dl_url:
-                return False, "JSON missing required 'version' or 'download_url' fields", None
-            return True, "Bundle JSON is valid", data
-        except Exception as e:
-            return False, f"Failed to connect or parse JSON: {e}", None
 
 
 # ==========================================
@@ -601,6 +551,5 @@ class StorageOperations:
 # Global feature manager instances
 gmscore_mgr = GmsCoreManager()
 pothelper_mgr = PotHelperManager()
-bundle_mgr = BundlePatcherManager()
 keystore_mgr = KeystoreManager()
 storage_ops = StorageOperations()
