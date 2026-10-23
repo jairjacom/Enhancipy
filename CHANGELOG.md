@@ -1,5 +1,15 @@
 # EnhanciPy Changelog
 
+## [v1.8.1] — pre-release follows the newest release
+
+### Fixed
+
+- **Pre-release setting no longer serves older builds.** With Pre-release
+  turned on, EnhanciPy picked the latest development build even when a newer
+  stable release existed (for example after a maintainer promoted the last
+  dev build or stopped publishing dev builds). It now uses whichever release
+  is newest, stable or pre-release, for both patches and the CLI.
+
 ## [v1.8.0] — older patch versions
 
 ### Added
