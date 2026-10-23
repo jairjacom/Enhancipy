@@ -19,7 +19,7 @@ import requests
 
 from src.config import config
 from src.environment import env
-from src.sources import SourceInfo, sources_mgr
+from src.sources import SourceInfo, pick_newest_release, sources_mgr
 from src.utils import (
     DownloadResult,
     download_file,
@@ -336,25 +336,16 @@ class AssetsManager:
 
         * Stable mode: ``/releases/latest`` returns a dict — use it directly.
           If a list is given, prefer the first NON-prerelease entry.
-        * Pre-release mode: list expected — return the first entry flagged
-          ``prerelease == true`` (skipping drafts). Fall back to the first
-          entry only when the repo publishes no prereleases at all.
+        * Pre-release mode: the newest release of ANY channel (see
+          ``pick_newest_release``), since a stable cut after the last dev
+          build is newer than it.
         """
         if isinstance(data, dict):
-            # Single release object (e.g. /releases/latest or /releases/tags/x)
-            if want_prerelease and not data.get("prerelease"):
-                # Wrong channel but still usable as last-resort fallback.
-                pass
             return data
         if not isinstance(data, list) or not data:
             return None
         if want_prerelease:
-            for rel in data:
-                if isinstance(rel, dict) and rel.get("prerelease") is True and rel.get("draft") is not True:
-                    return rel
-            # No prerelease published — fall back to newest release so the
-            # flow still works instead of hard-failing.
-            return data[0] if isinstance(data[0], dict) else None
+            return pick_newest_release(data)
         # Stable: first non-prerelease, else first entry.
         for rel in data:
             if isinstance(rel, dict) and not rel.get("prerelease") and rel.get("draft") is not True:
@@ -656,10 +647,9 @@ class AssetsManager:
 
         headers = self._get_github_headers()
         use_prerelease = config.is_on("USE_PRE_RELEASE")
-        # Effective JSON URL honours USE_PRE_RELEASE (main <-> dev branch swap).
-        effective_json_url = sources_mgr.get_effective_json_url(
-            source_name, src_info.json_url or ""
-        )
+        # Channel of the patches release actually chosen; defaults to the toggle
+        # (custom API / GitLab paths) and is refined from the GitHub release below.
+        chosen_prerelease = use_prerelease
 
         # 1. Fetch Patches info
         repo = src_info.repository
@@ -697,6 +687,7 @@ class AssetsManager:
                     data = r.json()
                     release_obj = self._select_github_release(data, use_prerelease)
                     if release_obj:
+                        chosen_prerelease = bool(release_obj.get("prerelease"))
                         patches_ver = release_obj.get("tag_name", "") or ""
                         changelog = release_obj.get("body", "") or ""
 
@@ -742,6 +733,11 @@ class AssetsManager:
                     changelog = custom["description"]
                     patches_size = 0
                     patches_ext = "mpp" if patches_url.endswith(".mpp") else "rvp"
+
+        # Effective JSON URL follows the chosen release's channel (main <-> dev).
+        effective_json_url = sources_mgr.get_effective_json_url(
+            source_name, src_info.json_url or "", chosen_prerelease
+        )
 
         # 2. Fetch CLI info (channel-aware: filter prereleases when enabled)
         cli_repo = self.resolve_cli_repo(patches_ext, source_name)
