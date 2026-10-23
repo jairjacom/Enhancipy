@@ -21,6 +21,26 @@ USER_AGENT_GITHUB = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTM
 
 
 LOCAL_SOURCE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$")
+
+
+def pick_newest_release(data: Any) -> Optional[Dict[str, Any]]:
+    """Newest published release of ANY channel from a ``/releases`` list.
+
+    GitHub returns the list newest first, so the first usable entry wins: a
+    stable build cut after the last dev build must beat that dev build.
+    Drafts and releases without assets are skipped.
+    """
+    if not isinstance(data, list):
+        return None
+    for rel in data:
+        if not isinstance(rel, dict) or rel.get("draft") is True:
+            continue
+        if rel.get("assets") == []:
+            continue
+        return rel
+    return None
+
+
 RESERVED_SOURCE_NAMES = {"morphe-data"}  # the Morphe CLI creates assets/morphe-data
 
 
@@ -349,12 +369,10 @@ class SourcesManager:
             return "", 0
 
     def fetch_prerelease_github_tag(self, repo: str) -> Tuple[str, int]:
-        """Fetch the latest prerelease tag from GitHub.
+        """Fetch the tag pre-release mode uses: the newest release of any channel.
 
-        NOTE: ``/releases?per_page=1`` returns the newest release of ANY type
-        (stable or prerelease), so taking ``[0]`` is wrong — it usually
-        returns the stable tag. We fetch a page of releases and pick the
-        first entry flagged as an actual prerelease (skipping drafts).
+        A stable release published after the last dev build is newer, so it
+        wins; see ``pick_newest_release``.
         """
         url = f"https://api.github.com/repos/{repo}/releases?per_page=30"
         try:
@@ -365,17 +383,8 @@ class SourcesManager:
             config.log_github_api_call(url, limit, rem, reset)
 
             if r.status_code == 200:
-                data = r.json()
-                if isinstance(data, list) and data:
-                    for rel in data:
-                        if not isinstance(rel, dict):
-                            continue
-                        if rel.get("prerelease") is True and rel.get("draft") is not True:
-                            tag = rel.get("tag_name", "") or ""
-                            if tag:
-                                return tag, r.status_code
-                    # No prerelease found in this page — caller decides fallback.
-                    return "", r.status_code
+                rel = pick_newest_release(r.json())
+                return ((rel.get("tag_name", "") or "") if rel else ""), r.status_code
             return "", r.status_code
         except Exception:
             return "", 0
@@ -433,16 +442,19 @@ class SourcesManager:
         "Doom-Patches",
     })
 
-    def get_effective_json_url(self, source_name: str, json_url: str) -> str:
-        """Return the JSON URL honouring the USE_PRE_RELEASE toggle.
+    def get_effective_json_url(
+        self, source_name: str, json_url: str, prerelease: Optional[bool] = None
+    ) -> str:
+        """Return the JSON URL for the channel of the release actually chosen.
 
         For known sources the stable file is on ``main`` and the bleeding-edge
         file is on ``dev`` — swap the branch segment at runtime instead of
-        rewriting sources.json like the bash version does.
+        rewriting sources.json like the bash version does. ``prerelease`` is
+        the chosen release's flag; None falls back to the USE_PRE_RELEASE toggle.
         """
         if not json_url:
             return json_url
-        use_pre = config.is_on("USE_PRE_RELEASE")
+        use_pre = config.is_on("USE_PRE_RELEASE") if prerelease is None else prerelease
         if source_name not in self.PRE_RELEASE_DEV_BRANCH_SOURCES:
             return json_url
         if use_pre:
