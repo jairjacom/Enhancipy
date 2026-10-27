@@ -1,5 +1,32 @@
 # EnhanciPy Changelog
 
+## [v1.9.0] — browser download when APKMirror blocks an app
+
+### Added
+
+- **Download in your browser when APKMirror blocks an app.** Some apps
+  (Instagram, for example) are protected by a browser check, so EnhanciPy
+  could not download them and showed an empty version list. It now tells you
+  what happened and offers "Use Browser": it lists the versions, marks the
+  one your patch source targets (with its build number), opens the APKMirror
+  page in your browser, and carries on by itself once the file lands in
+  Downloads.
+- **Back to Termux automatically.** When the browser download is detected,
+  EnhanciPy brings Termux back to the front. This needs Termux's "Display
+  over other apps" permission in Android settings; without it you switch back
+  by hand as before.
+
+### Fixed
+
+- **Apps with no listed version.** When a patch source does not name a
+  supported version for an app, EnhanciPy now asks the patch bundle for its
+  target version instead of recommending nothing.
+- **Fewer requests to APKMirror.** A blocked or rate-limited app now costs
+  one request instead of about ten.
+
+Note: the file you downloaded stays in your Downloads folder (a copy is
+used); delete the original yourself when you no longer need it.
+
 ## [v1.8.1] — pre-release follows the newest release
 
 ### Fixed
