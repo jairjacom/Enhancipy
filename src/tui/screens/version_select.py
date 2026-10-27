@@ -5,6 +5,7 @@ and downloads the chosen APK or APKM bundle before proceeding to patch selection
 """
 
 import shutil
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,9 +16,20 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Label, ListItem, ListView
 
 from src.antisplit import antisplit_mgr
-from src.apkmirror import ScrapedVersion, apkmirror_scraper
+from src.assets import assets_mgr
+from src.apkmirror import (
+    APKMIRROR_BASE,
+    APKMirrorBlocked,
+    ScrapedVersion,
+    apkmirror_scraper,
+    browser_download_dirs,
+    snapshot_downloads,
+    wait_for_browser_download,
+)
+from src.environment import env
 from src.config import config
 from src.theme import palette
+from src.utils import bring_termux_to_front, open_in_browser
 from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import (
     ConfirmDialog,
@@ -42,6 +54,8 @@ class VersionSelectScreen(BaseScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.versions_list: List[ScrapedVersion] = []
+        self.blocked = False
+        self.browser_mode = False
 
     def compose_content(self) -> ComposeResult:
         app_info = getattr(self.app, "selected_app", {})
@@ -63,6 +77,8 @@ class VersionSelectScreen(BaseScreen):
 
     def load_versions(self, force_refresh: bool = False) -> None:
         """Fetch version list."""
+        self.blocked = False
+        self.browser_mode = False
         app_info = getattr(self.app, "selected_app", {})
         app_name = app_info.get("appName", "")
         apkmirror_name = app_info.get("apkmirrorAppName", app_name.lower())
@@ -81,12 +97,15 @@ class VersionSelectScreen(BaseScreen):
         force_refresh: bool,
     ) -> None:
         try:
-            versions = apkmirror_scraper.fetch_versions_list(
-                apkmirror_name,
-                supported_versions=supported,
-                force_refresh=force_refresh,
-            )
-            self.versions_list = versions
+            try:
+                self.versions_list = apkmirror_scraper.fetch_versions_list(
+                    apkmirror_name,
+                    supported_versions=supported,
+                    force_refresh=force_refresh,
+                )
+            except APKMirrorBlocked:
+                self.versions_list = []
+                self.blocked = True
         finally:
             self.app.call_from_thread(modal.safe_dismiss)
             self.app.call_from_thread(self.populate_versions_list)
@@ -97,7 +116,19 @@ class VersionSelectScreen(BaseScreen):
         v_list.clear()
 
         if not self.versions_list:
-            v_list.append(ListItem(Label(Text("No versions found. Check internet connection or APKMirror name.", style=palette()["danger"]))))
+            if self.blocked:
+                v_list.append(ListItem(Label(Text(
+                    "APKMirror is blocking automatic downloads for this app (Cloudflare browser check).",
+                    style=palette()["danger"],
+                ))))
+                self._offer_browser_fallback()
+            elif self.browser_mode:
+                v_list.append(ListItem(Label(Text(
+                    "Couldn't get versions from APKMirror's API. Check your connection and press Refresh.",
+                    style=palette()["danger"],
+                ))))
+            else:
+                v_list.append(ListItem(Label(Text("No versions found. Check internet connection or APKMirror name.", style=palette()["danger"]))))
             return
 
         pal = palette()
@@ -116,6 +147,8 @@ class VersionSelectScreen(BaseScreen):
                 txt.append(" [ALPHA]", style=pal["danger"])
             else:
                 txt.append(" [STABLE]", style=pal["muted"])
+            if v.note:
+                txt.append(f"  {v.note}", style=pal["muted"])
 
             item = ListItem(Label(txt))
             item.version_idx = idx
@@ -224,6 +257,9 @@ class VersionSelectScreen(BaseScreen):
 
     def _start_download(self, selected_version: ScrapedVersion) -> None:
         """Download APK / APKM from APKMirror, process antisplit, and proceed to patch screen."""
+        if self.browser_mode:
+            self._start_browser_download(selected_version)
+            return
         app_info = getattr(self.app, "selected_app", {})
         app_name = app_info.get("appName", "")
 
@@ -292,34 +328,183 @@ class VersionSelectScreen(BaseScreen):
                 )
                 return
 
-            # 3. Antisplit or optimize native libs
-            target_apk = downloaded_file.parent / f"{selected_version.version}.apk"
-
-            if ext == "apkm":
-                modal.update_message("Merging APKM bundle splits with APKEditor...")
-                ok = antisplit_mgr.antisplit_apkm(downloaded_file, target_apk)
-                if not ok:
-                    self.app.call_from_thread(modal.safe_dismiss)
-                    self.app.call_from_thread(
-                        self.app.push_screen,
-                        MessageDialog("Merge Error", "Failed to merge APKM splits!"),
-                    )
-                    return
-            elif ext == "apk" and config.is_on("OPTIMIZE_LIBS"):
-                modal.update_message(
-                    "Optimizing native libraries for device architecture..."
-                )
-                antisplit_mgr.optimize_native_libs(downloaded_file)
-
-            apk_path = target_apk if target_apk.exists() else downloaded_file
-
-            def apply_result():
-                self.app.selected_app["version"] = selected_version.version
-                self.app.selected_app["apk_path"] = apk_path
-
-            self.app.call_from_thread(apply_result)
+            self._finish_downloaded_app(modal, downloaded_file, selected_version.version, ext)
+        except APKMirrorBlocked:
+            # e.g. a version list cached before APKMirror started challenging this app.
             self.app.call_from_thread(modal.safe_dismiss)
-            self.app.call_from_thread(self.app.push_screen, "patch_select_screen")
+            self.app.call_from_thread(self._offer_browser_fallback, selected_version)
+        except Exception as e:
+            self.app.call_from_thread(modal.safe_dismiss)
+            self.app.call_from_thread(
+                self.app.push_screen,
+                MessageDialog("Error", f"Error during download process: {e}"),
+            )
+
+    def _finish_downloaded_app(
+        self,
+        modal: DownloadProgressModal,
+        downloaded_file: Path,
+        version: str,
+        ext: str,
+        note: str = "",
+    ) -> None:
+        """Antisplit / optimize a downloaded app file, then proceed to patch selection.
+        Runs in a worker thread."""
+        # 3. Antisplit or optimize native libs
+        target_apk = downloaded_file.parent / f"{version}.apk"
+
+        if ext == "apkm":
+            modal.update_message(note + "Merging APKM bundle splits with APKEditor...")
+            ok = antisplit_mgr.antisplit_apkm(downloaded_file, target_apk)
+            if not ok:
+                self.app.call_from_thread(modal.safe_dismiss)
+                self.app.call_from_thread(
+                    self.app.push_screen,
+                    MessageDialog("Merge Error", "Failed to merge APKM splits!"),
+                )
+                return
+        elif ext == "apk" and config.is_on("OPTIMIZE_LIBS"):
+            modal.update_message(
+                note + "Optimizing native libraries for device architecture..."
+            )
+            antisplit_mgr.optimize_native_libs(downloaded_file)
+
+        apk_path = target_apk if target_apk.exists() else downloaded_file
+
+        def apply_result():
+            self.app.selected_app["version"] = version
+            self.app.selected_app["apk_path"] = apk_path
+
+        self.app.call_from_thread(apply_result)
+        self.app.call_from_thread(modal.safe_dismiss)
+        self.app.call_from_thread(self.app.push_screen, "patch_select_screen")
+
+    # --- Browser handoff (APKMirror blocks plain HTTP clients with a Cloudflare challenge) ---
+
+    def _offer_browser_fallback(self, selected_version: Optional[ScrapedVersion] = None) -> None:
+        app_info = getattr(self.app, "selected_app", {})
+        app_name = app_info.get("appName", "")
+        ver = f" {selected_version.version}" if selected_version else ""
+        message = (
+            f"APKMirror is showing a Cloudflare browser check for {app_name}{ver}, "
+            f"so EnhanciPy can't download it automatically.\n\n"
+            f"Use your browser instead: EnhanciPy opens the APKMirror page in your browser "
+            f"and continues on its own once the file lands in Downloads."
+        )
+
+        def on_choice(use_browser: Optional[bool]) -> None:
+            if not use_browser:
+                return
+            if selected_version is None:
+                self.load_browser_versions()
+            else:
+                self._start_browser_download(selected_version)
+
+        self.app.push_screen(
+            ConfirmDialog(
+                title="| APKMirror Blocked |",
+                message=message,
+                yes_label="🌐 Use Browser",
+                no_label="🔙 Back",
+            ),
+            on_choice,
+        )
+
+    def load_browser_versions(self) -> None:
+        app_info = getattr(self.app, "selected_app", {})
+        app_name = app_info.get("appName", "")
+        modal = ProgressModal("Loading Versions", f"Fetching {app_name} versions from APKMirror's API...")
+        self.app.push_screen(modal)
+        self.run_browser_versions_worker(modal, app_info.get("pkgName", ""), app_info.get("versions", []))
+
+    @work(thread=True)
+    def run_browser_versions_worker(self, modal: ProgressModal, pkg: str, supported: List[str]) -> None:
+        try:
+            # The patches JSON can omit the version the bundle targets (HushGram's
+            # Instagram entry is empty); the bundle itself knows it.
+            targets = assets_mgr.target_versions(config.get("SOURCE", "Anddea"), pkg)
+            supported = list(supported) + [v for v in targets if v not in supported]
+            self.versions_list = apkmirror_scraper.fetch_browser_versions(pkg, supported, targets)
+            self.browser_mode = True
+        finally:
+            self.app.call_from_thread(modal.safe_dismiss)
+            self.app.call_from_thread(self.populate_versions_list)
+
+    def _start_browser_download(self, selected_version: ScrapedVersion) -> None:
+        app_info = getattr(self.app, "selected_app", {})
+        app_name = app_info.get("appName", "")
+
+        dirs = browser_download_dirs()
+        if not dirs:
+            self.app.push_screen(
+                MessageDialog(
+                    "Downloads Not Accessible",
+                    "EnhanciPy can't read your Downloads folder. "
+                    "Run termux-setup-storage in Termux, then try again.",
+                )
+            )
+            return
+
+        url = urllib.parse.urljoin(APKMIRROR_BASE, selected_version.url)
+        modal = DownloadProgressModal.for_browser_download(
+            app_name, selected_version.version, env.get_arch(), url, selected_version.note
+        )
+        self.app.push_screen(modal)
+        self.run_browser_download_worker(modal, selected_version, url, dirs)
+
+    @work(thread=True)
+    def run_browser_download_worker(
+        self,
+        modal: DownloadProgressModal,
+        selected_version: ScrapedVersion,
+        url: str,
+        dirs: List[Path],
+    ) -> None:
+        app_info = getattr(self.app, "selected_app", {})
+        app_name = app_info.get("appName", "")
+        pkg = app_info.get("pkgName", "")
+
+        try:
+            # Snapshot before opening the browser so pre-existing files are ignored.
+            before = snapshot_downloads(dirs)
+            if not open_in_browser(url):
+                modal.update_message("Couldn't open the browser. Open the link above manually.")
+
+            meta = wait_for_browser_download(
+                pkg, modal.cancel_event, dirs, before, status_callback=modal.update_message
+            )
+
+            if modal.was_cancelled:
+                self.app.call_from_thread(modal.safe_dismiss, "cancelled")
+                self.app.call_from_thread(
+                    self.app.push_screen,
+                    MessageDialog("Cancelled", "App download cancelled."),
+                )
+                return
+
+            if meta is None:
+                self.app.call_from_thread(modal.safe_dismiss)
+                self.app.call_from_thread(
+                    self.app.push_screen,
+                    MessageDialog(
+                        "Browser Download",
+                        f"No {app_name} download showed up in Downloads within 15 minutes.\n\n"
+                        "Try again, or use Import on the app list to pick the file yourself.",
+                    ),
+                )
+                return
+
+            # The real file's version wins if the user downloaded a different one.
+            version = meta.version_name or selected_version.version
+            bring_termux_to_front()
+            downloaded = apkmirror_scraper.adopt_browser_download(
+                app_name, version, meta.file_path, meta.extension
+            )
+            note = (
+                f"Copied to apps/{app_name}. The original stays in Downloads; "
+                "delete it yourself when you no longer need it.\n\n"
+            )
+            self._finish_downloaded_app(modal, downloaded, version, meta.extension, note)
         except Exception as e:
             self.app.call_from_thread(modal.safe_dismiss)
             self.app.call_from_thread(
