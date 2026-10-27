@@ -1,0 +1,102 @@
+{
+  "categories": [
+    {"id": "patching", "title": "Patching"},
+    {"id": "sources", "title": "Sources"},
+    {"id": "apps", "title": "Getting the app"},
+    {"id": "experience", "title": "Look and feel"}
+  ],
+  "requirements": [
+    {
+      "id": "storage",
+      "title": "Storage access",
+      "how": "Run `termux-setup-storage` once in Termux and allow the prompt.",
+      "optional": false
+    },
+    {
+      "id": "overlay",
+      "title": "Display over other apps",
+      "how": "Android Settings, Apps, Termux, Display over other apps: turn it on. Without it you switch back to Termux by hand.",
+      "optional": true
+    },
+    {
+      "id": "install-access",
+      "title": "Root or Shizuku",
+      "how": "Only to install the patched app for you. Use `su`, or Shizuku running with its `rish` shell copied into Termux. Patching alone needs neither.",
+      "optional": true
+    }
+  ],
+  "features": [
+    {
+      "id": "patch-apps",
+      "title": "Patch Android apps in Termux",
+      "since": "v1.0.0",
+      "category": "patching",
+      "summary": "Pick an app, a version and the patches you want, then patch and sign it, all from a terminal UI on your phone.",
+      "requires": []
+    },
+    {
+      "id": "install-modes",
+      "title": "Install it for you",
+      "since": "v1.0.0",
+      "category": "patching",
+      "summary": "Install the patched app through root or Shizuku (rish), including a prompt to resolve version-downgrade conflicts.",
+      "requires": ["install-access"]
+    },
+    {
+      "id": "manage-sources",
+      "title": "Manage Sources",
+      "since": "v1.7.0",
+      "category": "sources",
+      "summary": "One screen lists every patch source, repositories and imported files alike. Add or delete any of them and the changes stay after updates.",
+      "requires": []
+    },
+    {
+      "id": "import-patch-file",
+      "title": "Import Patch File",
+      "since": "v1.4.0",
+      "category": "sources",
+      "summary": "Use a `.mpp` patch bundle from your device as a source. The matching patcher is picked or downloaded for you.",
+      "requires": ["storage"]
+    },
+    {
+      "id": "older-versions",
+      "title": "Older Versions",
+      "since": "v1.8.0",
+      "category": "sources",
+      "summary": "Pin one of a source's 5 newest releases as a local source that stays on that version until you delete it.",
+      "requires": []
+    },
+    {
+      "id": "bundle-formats",
+      "title": "Bundle apps (APKM, APKS, XAPK)",
+      "since": "v1.3.7",
+      "category": "apps",
+      "summary": "Apps that APKMirror serves as bundles are merged into one APK before patching, and install correctly afterwards.",
+      "requires": []
+    },
+    {
+      "id": "apkmirror-browser",
+      "title": "Download in your browser when APKMirror blocks an app",
+      "since": "v1.9.0",
+      "category": "apps",
+      "summary": "When APKMirror's browser check stops an automatic download, EnhanciPy opens the right page in your browser, marks the version your patch source targets, and carries on once the file lands in Downloads. It then brings Termux back to the front.",
+      "requires": ["storage", "overlay"]
+    },
+    {
+      "id": "themes",
+      "title": "10 themes",
+      "since": "v1.5.0",
+      "category": "experience",
+      "summary": "From Cybernetic Green to Tokyo Night and OLED Midnight, with readable text and thin scrollbars in every one. Dialogs and lists fit small screens.",
+      "requires": []
+    },
+    {
+      "id": "auto-update",
+      "title": "Automatic updates",
+      "since": "v1.3.0",
+      "category": "experience",
+      "summary": "EnhanciPy checks for a newer version on every start and installs it. Turn it off in Configure, Features, Auto Update.",
+      "requires": []
+    }
+  ]
+}
