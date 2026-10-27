@@ -61,6 +61,7 @@ class ScrapedVersion:
     version: str
     tag: str  # e.g. "[STABLE]", "[BETA]", "[ALPHA]", "[RECOMMENDED]", "[INSTALLED]"
     url: str
+    note: str = ""  # extra hint shown beside the version, e.g. "build 385811006"
 
 
 def _version_sort_key(version: str) -> Tuple[Tuple[int, ...], str]:
@@ -254,10 +255,13 @@ class APKMirrorScraper:
 
             all_scraped = []
             blocked = False
+            # Probe page 1 alone first: a Cloudflare challenge or rate limit then
+            # costs one request instead of a burst across every page.
+            all_scraped.extend(self.scrape_versions_page(apkmirror_app_name, 1))
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {
                     executor.submit(self.scrape_versions_page, apkmirror_app_name, p): p
-                    for p in range(1, page_limit + 1)
+                    for p in range(2, page_limit + 1)
                 }
                 for fut in concurrent.futures.as_completed(futures):
                     try:
@@ -521,13 +525,23 @@ class APKMirrorScraper:
         return urllib.parse.urljoin(APKMIRROR_BASE, best_link) if best_link else None
 
     def fetch_browser_versions(
-        self, pkg_name: str, supported_versions: Optional[List[str]] = None
+        self,
+        pkg_name: str,
+        supported_versions: Optional[List[str]] = None,
+        build_codes: Optional[Dict[str, str]] = None,
     ) -> List[ScrapedVersion]:
         """Version list built from APKMirror's app_exists API, which Cloudflare
         doesn't challenge. Only the latest release is known for sure; other
         supported versions are guessed release-page URLs (the browser shows
-        APKMirror's 404 if one doesn't exist)."""
+        APKMirror's 404 if one doesn't exist). build_codes maps version -> the
+        build (version code) to pick on that page; it becomes the entry's note."""
         supported = supported_versions or []
+        build_codes = build_codes or {}
+
+        def note_for(version: str) -> str:
+            code = build_codes.get(version)
+            return f"build {code}" if code else ""
+
         try:
             r = requests.post(
                 APP_EXISTS_URL, headers=APP_EXISTS_HEADERS, json={"pnames": [pkg_name]}, timeout=15
@@ -553,6 +567,7 @@ class APKMirrorScraper:
                 "[RECOMMENDED]" if latest in supported else "[STABLE]",
                 self._pick_variant_url(entry.get("apks") or [])
                 or urllib.parse.urljoin(APKMIRROR_BASE, release_link),
+                note_for(latest),
             )
         ]
         dashed = latest.replace(".", "-")
@@ -563,6 +578,7 @@ class APKMirrorScraper:
                         v,
                         "[RECOMMENDED]",
                         urllib.parse.urljoin(APKMIRROR_BASE, release_link.replace(dashed, v.replace(".", "-"))),
+                        note_for(v),
                     ))
         return order_versions(result)
 

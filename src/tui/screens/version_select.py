@@ -16,6 +16,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Label, ListItem, ListView
 
 from src.antisplit import antisplit_mgr
+from src.assets import assets_mgr
 from src.apkmirror import (
     APKMIRROR_BASE,
     APKMirrorBlocked,
@@ -146,6 +147,8 @@ class VersionSelectScreen(BaseScreen):
                 txt.append(" [ALPHA]", style=pal["danger"])
             else:
                 txt.append(" [STABLE]", style=pal["muted"])
+            if v.note:
+                txt.append(f"  {v.note}", style=pal["muted"])
 
             item = ListItem(Label(txt))
             item.version_idx = idx
@@ -412,7 +415,11 @@ class VersionSelectScreen(BaseScreen):
     @work(thread=True)
     def run_browser_versions_worker(self, modal: ProgressModal, pkg: str, supported: List[str]) -> None:
         try:
-            self.versions_list = apkmirror_scraper.fetch_browser_versions(pkg, supported)
+            # The patches JSON can omit the version the bundle targets (HushGram's
+            # Instagram entry is empty); the bundle itself knows it.
+            targets = assets_mgr.target_versions(config.get("SOURCE", "Anddea"), pkg)
+            supported = list(supported) + [v for v in targets if v not in supported]
+            self.versions_list = apkmirror_scraper.fetch_browser_versions(pkg, supported, targets)
             self.browser_mode = True
         finally:
             self.app.call_from_thread(modal.safe_dismiss)
@@ -435,7 +442,7 @@ class VersionSelectScreen(BaseScreen):
 
         url = urllib.parse.urljoin(APKMIRROR_BASE, selected_version.url)
         modal = DownloadProgressModal.for_browser_download(
-            app_name, selected_version.version, env.get_arch(), url
+            app_name, selected_version.version, env.get_arch(), url, selected_version.note
         )
         self.app.push_screen(modal)
         self.run_browser_download_worker(modal, selected_version, url, dirs)

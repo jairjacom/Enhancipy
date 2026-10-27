@@ -101,6 +101,38 @@ _CLI_OPTION_FIELD_NAMES = (
     "Possible values", "Type",
 )
 
+_LIST_VERSIONS_ROW = re.compile(r"^(\S+)(?:\s+\[versionCodes:\s*([^\]]*)\])?\s*\(\d+ patch")
+
+
+def parse_list_versions(output: str, pkg_name: str, arch: str) -> Dict[str, str]:
+    """Parse CLI `list-versions` output for one package.
+
+    Rows look like `452.1.0.53.64 [versionCodes: ARM64_V8A=385811006] (117 patches)`
+    under an `INFO: Package name: <pkg>` header. Returns {version: build code
+    for `arch` ("" when the row lists none for it)}. "Any" rows are skipped.
+    """
+    abi_key = arch.upper().replace("-", "_")
+    result: Dict[str, str] = {}
+    in_pkg = False
+    for raw in output.splitlines():
+        line = raw.strip()
+        header = re.search(r"Package name:\s*(\S+)", line)
+        if header:
+            in_pkg = header.group(1) == pkg_name
+            continue
+        if not in_pkg:
+            continue
+        m = _LIST_VERSIONS_ROW.match(line)
+        if not m or m.group(1).lower() == "any":
+            continue
+        codes = {}
+        for part in (m.group(2) or "").split(","):
+            k, _, v = part.strip().partition("=")
+            if k and v:
+                codes[k] = v
+        result[m.group(1)] = codes.get(abi_key, "")
+    return result
+
 
 def _normalize_cli_option_type(raw_type: str) -> str:
     t = str(raw_type or "")
@@ -1199,6 +1231,34 @@ class AssetsManager:
         target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_text(json.dumps(result_list, indent=2), encoding="utf-8")
         return result_list
+
+    def target_versions(self, source_name: str, pkg_name: str) -> Dict[str, str]:
+        """Versions the installed patches bundle targets for pkg_name, via CLI
+        list-versions: {version: build code for this device's ABI ("" if unknown)}.
+
+        Some sources' patches JSON lists no versions for an app although the
+        bundle targets one, so the JSON can't be trusted to say which version
+        to download. Empty dict when no CLI/bundle/java is available.
+        """
+        local_src = sources_mgr.get_local_source(source_name)
+        if local_src:
+            pinned, _ = self.select_cli_for_bundle(local_src.patcher_version)
+            cli_jars = [pinned] if pinned else []
+        else:
+            cli_jars = list(self.assets_dir.glob("CLI-*.jar"))
+        src_dir = self.assets_dir / source_name
+        bundles = [p for p in src_dir.glob("Patches-*.*") if p.suffix.lower() in (".jar", ".rvp", ".mpp")]
+        if not cli_jars or not bundles or not shutil.which("java"):
+            return {}
+        cli_jar = max(cli_jars, key=lambda p: p.stat().st_mtime)
+        bundle = max(bundles, key=lambda p: p.stat().st_mtime)
+        cmd = ["java", "-jar", str(cli_jar), "list-versions", f"--patches={bundle}", "-u"]
+        if source_name == "ReVanced":
+            cmd.append("--bypass-verification")
+        code, out, _ = run_command(cmd, timeout=120)
+        if code != 0:
+            return {}
+        return parse_list_versions(out, pkg_name, env.get_arch())
 
     def load_or_fetch_patches_json(
         self,

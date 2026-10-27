@@ -61,7 +61,7 @@ INSTAGRAM_ENTRY = {
     "app": {"name": "Instagram", "link": "/apk/instagram/instagram-instagram/"},
     "release": {
         "version": "453.0.0.55.79",
-        "link": "/apk/instagram/instagram-instagram/instagram-instagram-453-0-0-55-79-release/",
+        "link": "/apk/instagram/instagram-instagram/instagram-453-0-0-55-79-release/",
     },
     "apks": [
         {"version_code": "385914237", "arches": ["arm64-v8a"], "minapi": "28",
@@ -98,6 +98,12 @@ class TestChallengeDetection(_ScraperCase):
         with mock.patch("src.apkmirror.requests.get", return_value=CHALLENGE):
             with self.assertRaises(APKMirrorBlocked):
                 self.scraper.fetch_versions_list("instagram-instagram", force_refresh=True)
+
+    def test_challenge_costs_one_request(self):
+        with mock.patch("src.apkmirror.requests.get", return_value=CHALLENGE) as get:
+            with self.assertRaises(APKMirrorBlocked):
+                self.scraper.fetch_versions_list("instagram-instagram", force_refresh=True)
+        self.assertEqual(get.call_count, 1)
 
     def test_blocked_result_is_not_cached(self):
         with mock.patch("src.apkmirror.requests.get", return_value=CHALLENGE):
@@ -152,8 +158,17 @@ class TestFetchBrowserVersions(_ScraperCase):
         self.assertEqual(
             old.url,
             "https://www.apkmirror.com/apk/instagram/instagram-instagram/"
-            "instagram-instagram-452-1-0-53-64-release/",
+            "instagram-452-1-0-53-64-release/",
         )
+
+    def test_build_codes_become_notes(self):
+        self.patch_env()
+        with self._post():
+            res = self.scraper.fetch_browser_versions(
+                "com.instagram.android", ["452.1.0.53.64"], {"452.1.0.53.64": "385811006"}
+            )
+        notes = {v.version: v.note for v in res}
+        self.assertEqual(notes, {"452.1.0.53.64": "build 385811006", "453.0.0.55.79": ""})
 
     def test_latest_in_supported_is_recommended(self):
         self.patch_env()
@@ -165,7 +180,7 @@ class TestFetchBrowserVersions(_ScraperCase):
         self.patch_env(arch="mips")
         with self._post():
             res = self.scraper.fetch_browser_versions("com.instagram.android", [])
-        self.assertTrue(res[0].url.endswith("instagram-instagram-453-0-0-55-79-release/"))
+        self.assertTrue(res[0].url.endswith("instagram-453-0-0-55-79-release/"))
 
     def test_non_200_returns_empty(self):
         self.patch_env()
@@ -176,6 +191,37 @@ class TestFetchBrowserVersions(_ScraperCase):
         self.patch_env()
         with self._post(entries=[{"pname": "com.instagram.android", "exists": False}]):
             self.assertEqual(self.scraper.fetch_browser_versions("com.instagram.android", []), [])
+
+
+LIST_VERSIONS_OUT = """INFO: Morphe data root: /x
+INFO: Package name: com.other.app
+Most common compatible versions:
+\t1.0.0 [versionCodes: ARM64_V8A=1] (3 patches)
+
+INFO: Package name: com.instagram.android
+Most common compatible versions:
+\t452.1.0.53.64 [versionCodes: ARM64_V8A=385811006, ARMEABI_V7A=385811005] (117 patches)
+\t451.0.0.1.1 (4 patches)
+\tAny (2 patches)
+"""
+
+
+class TestParseListVersions(unittest.TestCase):
+    def test_reads_versions_and_codes_for_one_package(self):
+        from src.assets import parse_list_versions
+
+        self.assertEqual(
+            parse_list_versions(LIST_VERSIONS_OUT, "com.instagram.android", "arm64-v8a"),
+            {"452.1.0.53.64": "385811006", "451.0.0.1.1": ""},
+        )
+
+    def test_unknown_package_and_arch(self):
+        from src.assets import parse_list_versions
+
+        self.assertEqual(parse_list_versions(LIST_VERSIONS_OUT, "nope", "arm64-v8a"), {})
+        self.assertEqual(
+            parse_list_versions(LIST_VERSIONS_OUT, "com.instagram.android", "x86")["452.1.0.53.64"], ""
+        )
 
 
 def _meta(pkg, path, version="1.0", ext="apk"):
@@ -288,11 +334,13 @@ class TestVersionSelectBlockedFlow(unittest.TestCase):
     }
 
     def _drive(self, click, expect_browser_fetch):
+        import src.tui.screens.version_select as vs_mod
         from src.tui.app import EnhancifyApp
         from src.tui.screens.version_select import VersionSelectScreen
         from src.tui.widgets.dialogs import ConfirmDialog
         from textual.widgets import ListView
 
+        vs_assets = vs_mod.assets_mgr
         browser_versions = [ScrapedVersion("453.0.0.55.79", "[STABLE]", "https://www.apkmirror.com/apk/x/")]
 
         async def _run():
@@ -301,7 +349,7 @@ class TestVersionSelectBlockedFlow(unittest.TestCase):
                 apkmirror.apkmirror_scraper, "fetch_versions_list", side_effect=APKMirrorBlocked("x")
             ), mock.patch.object(
                 apkmirror.apkmirror_scraper, "fetch_browser_versions", return_value=browser_versions
-            ) as fbv:
+            ) as fbv, mock.patch.object(vs_assets, "target_versions", return_value={}):
                 async with app.run_test(size=(100, 30)) as pilot:
                     app.selected_app = dict(self.SELECTED)
                     app.push_screen("version_select_screen")
@@ -371,6 +419,7 @@ class TestBrowserHandoffEndToEnd(unittest.TestCase):
                     mock.patch.object(vs, "browser_download_dirs", return_value=[downloads]), \
                     mock.patch.object(apkmirror.antisplit_mgr, "ensure_aapt2", return_value=True), \
                     mock.patch.object(apkmirror.antisplit_mgr, "extract_metadata", return_value=meta), \
+                    mock.patch.object(vs.assets_mgr, "target_versions", return_value={}), \
                     mock.patch.object(vs.config, "is_on", return_value=False):
                 async with app.run_test(size=(100, 30)) as pilot:
                     app.selected_app = dict(TestVersionSelectBlockedFlow.SELECTED)
