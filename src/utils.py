@@ -402,6 +402,14 @@ def run_command(
         return 1, "", str(e)
 
 
+def open_in_browser(url: str) -> bool:
+    """Open url in the Android browser via termux-open-url. False if unavailable/failed."""
+    if not shutil.which("termux-open-url"):
+        return False
+    code, _, _ = run_command(["termux-open-url", url], timeout=15)
+    return code == 0
+
+
 RISH_MARKER = "ENH_RISH_OK"
 _RISH_BANNER_RE = re.compile(r"(?im)^[ \t]*entering shell\.*[ \t]*\r?$\n?")
 

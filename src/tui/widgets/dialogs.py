@@ -347,6 +347,22 @@ class DownloadProgressModal(ModalScreen[Optional[str]]):
         return cls(title="| Downloading App |", body=body, total_size=size)
 
     @classmethod
+    def for_browser_download(
+        cls, app_name: str, version: str, arch: str, url: str
+    ) -> "DownloadProgressModal":
+        """Browser handoff for Cloudflare-blocked apps; the watcher reports elapsed time."""
+        body = (
+            f"App    : {app_name}\n"
+            f"Version: {version}\n"
+            f"Arch   : {arch}\n"
+            f"\n"
+            f"Opened in your browser:\n{url}\n"
+            f"\n"
+            f"Tap Download there. EnhanciPy continues once the file is in Downloads."
+        )
+        return cls(title="| Download in Browser |", body=body, total_size=0, allow_cancel=True)
+
+    @classmethod
     def for_dependency(
         cls, label: str, size: int = 0, title: str = "| Fetch Dependency |"
     ) -> "DownloadProgressModal":

@@ -17,9 +17,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import requests
 from bs4 import BeautifulSoup
 
+from src.antisplit import ExtractedAppMeta, antisplit_mgr
 from src.config import config
 from src.environment import env
 import threading
+import time
 
 from src.utils import DownloadResult, download_file, download_file_ex
 
@@ -28,6 +30,30 @@ USER_AGENT = "APKUpdater-3.0.3"
 APKMIRROR_BASE = "https://www.apkmirror.com"
 APP_EXISTS_URL = f"{APKMIRROR_BASE}/wp-json/apkm/v1/app_exists/"
 APP_EXISTS_AUTH = "Basic YXBpLXRvb2xib3gtZm9yLWdvb2dsZS1wbGF5OkNiVVcgQVVMZyBNRVJXIHU4M3IgS0s0SCBEbmJL"
+APP_EXISTS_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "Authorization": APP_EXISTS_AUTH,
+}
+
+# Browser handoff: where Android browsers save downloads. APKMirror only serves
+# .apk and .apkm.
+BROWSER_DOWNLOAD_DIRS = (
+    Path.home() / "storage" / "downloads",
+    Path("/storage/emulated/0/Download"),
+    Path("/sdcard/Download"),
+)
+_BROWSER_EXTS = (".apk", ".apkm")
+
+
+class APKMirrorBlocked(Exception):
+    """APKMirror answered with Cloudflare's managed JS challenge, which plain HTTP clients cannot pass."""
+
+
+def _is_challenge(resp) -> bool:
+    return resp.status_code == 403 and resp.headers.get("cf-mitigated", "").lower() == "challenge"
+
 
 
 @dataclass
@@ -123,12 +149,7 @@ class APKMirrorScraper:
         step for any package whose slug doesn't match its name.
         """
         result: Dict[str, Dict[str, str]] = {}
-        headers = {
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Authorization": APP_EXISTS_AUTH,
-        }
+        headers = APP_EXISTS_HEADERS
         pkg_names = [p for p in pkg_names if p]
 
         for i in range(0, len(pkg_names), batch_size):
@@ -165,6 +186,8 @@ class APKMirrorScraper:
 
         try:
             r = requests.get(url, headers=headers, timeout=10)
+            if _is_challenge(r):
+                raise APKMirrorBlocked(url)
             if r.status_code != 200:
                 return []
 
@@ -199,6 +222,8 @@ class APKMirrorScraper:
                     "tag": tag,
                     "url": href,
                 })
+        except APKMirrorBlocked:
+            raise
         except Exception:
             pass
 
@@ -228,6 +253,7 @@ class APKMirrorScraper:
                 progress_callback(f"Scraping {page_limit} pages from APKMirror...")
 
             all_scraped = []
+            blocked = False
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {
                     executor.submit(self.scrape_versions_page, apkmirror_app_name, p): p
@@ -237,6 +263,8 @@ class APKMirrorScraper:
                     try:
                         res = fut.result()
                         all_scraped.extend(res)
+                    except APKMirrorBlocked:
+                        blocked = True
                     except Exception:
                         pass
 
@@ -253,6 +281,8 @@ class APKMirrorScraper:
                 self.write_cached_versions(apkmirror_app_name, raw_versions, page_limit)
 
         if not raw_versions:
+            if blocked:
+                raise APKMirrorBlocked(apkmirror_app_name)
             return []
 
         # Process tags
@@ -278,6 +308,7 @@ class APKMirrorScraper:
         """
         Scrape download URL, file extension (apk/apkm), expected size, and download link.
         Returns (download_url, format_type, size_bytes, extension)
+        Raises APKMirrorBlocked when the page is behind Cloudflare's challenge.
         """
         headers = {"User-Agent": USER_AGENT}
         full_url = version_url if version_url.startswith("http") else f"{APKMIRROR_BASE}{version_url}"
@@ -285,6 +316,8 @@ class APKMirrorScraper:
         try:
             # 1. Fetch release / version page
             r = requests.get(full_url, headers=headers, timeout=10)
+            if _is_challenge(r):
+                raise APKMirrorBlocked(full_url)
             if r.status_code != 200:
                 return None
 
@@ -346,6 +379,8 @@ class APKMirrorScraper:
 
             # 2. Fetch variant download page
             r2 = requests.get(target_variant_url, headers=headers, timeout=10)
+            if _is_challenge(r2):
+                raise APKMirrorBlocked(target_variant_url)
             if r2.status_code != 200:
                 return None
 
@@ -362,6 +397,8 @@ class APKMirrorScraper:
 
             # 3. Final download page with direct link
             r3 = requests.get(step2_url, headers=headers, timeout=10)
+            if _is_challenge(r3):
+                raise APKMirrorBlocked(step2_url)
             if r3.status_code != 200:
                 return None
 
@@ -386,6 +423,8 @@ class APKMirrorScraper:
                 pass
 
             return final_url, app_format, size, app_ext
+        except APKMirrorBlocked:
+            raise
         except Exception:
             return None
 
@@ -409,12 +448,7 @@ class APKMirrorScraper:
         target_file = target_dir / f"{version}.{ext}"
 
         # Write .data metadata
-        data_lines = [
-            f"APP_FORMAT='{'BUNDLE' if ext != 'apk' else 'APK'}'",
-            f"APP_EXT='{ext}'",
-            f"APP_SIZE='{expected_size}'",
-        ]
-        (target_dir / ".data").write_text("\n".join(data_lines) + "\n", encoding="utf-8")
+        self._write_app_data(target_dir, ext, expected_size)
 
         if target_file.exists() and (expected_size <= 0 or target_file.stat().st_size == expected_size):
             return target_file
@@ -427,11 +461,185 @@ class APKMirrorScraper:
             cancel_event=cancel_event,
         )
         if result == DownloadResult.OK and target_file.exists():
-            new_size = target_file.stat().st_size
-            data_lines[2] = f"APP_SIZE='{new_size}'"
-            (target_dir / ".data").write_text("\n".join(data_lines) + "\n", encoding="utf-8")
+            self._write_app_data(target_dir, ext, target_file.stat().st_size)
             return target_file
         return None
+
+    def _write_app_data(self, target_dir: Path, ext: str, size: int) -> None:
+        data_lines = [
+            f"APP_FORMAT='{'BUNDLE' if ext != 'apk' else 'APK'}'",
+            f"APP_EXT='{ext}'",
+            f"APP_SIZE='{size}'",
+        ]
+        (target_dir / ".data").write_text("\n".join(data_lines) + "\n", encoding="utf-8")
+
+    def adopt_browser_download(self, app_name: str, version: str, src: Path, ext: str) -> Path:
+        """Move a file the user downloaded in the browser into apps/<app_name>/.
+
+        Moved (not copied) so a large APK isn't kept twice. OSError propagates.
+        """
+        target_dir = self.apps_dir / app_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{version}.{ext}"
+        target.unlink(missing_ok=True)
+        shutil.move(str(src), str(target))
+        self._write_app_data(target_dir, ext, target.stat().st_size)
+        return target
+
+    # --- Browser handoff (Cloudflare-blocked apps) ---
+
+    def _pick_variant_url(self, apks: List[Dict[str, Any]]) -> Optional[str]:
+        """Pick the best variant page for this device from the app_exists API's
+        `apks` list: arch match (or noarch), minapi <= device SDK, highest version code."""
+        arch = env.get_arch()
+        try:
+            sdk = int(env.getprop("ro.build.version.sdk", "0") or 0)
+        except (TypeError, ValueError):
+            sdk = 0
+
+        def as_int(value: Any) -> int:
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        best_code = -1
+        best_link = None
+        for a in apks:
+            link = a.get("link") or ""
+            if not link:
+                continue
+            arches = a.get("arches") or []
+            if arches and arch not in arches:
+                continue
+            if sdk and as_int(a.get("minapi")) > sdk:
+                continue
+            code = as_int(a.get("version_code"))
+            if code > best_code:
+                best_code = code
+                best_link = link
+        return urllib.parse.urljoin(APKMIRROR_BASE, best_link) if best_link else None
+
+    def fetch_browser_versions(
+        self, pkg_name: str, supported_versions: Optional[List[str]] = None
+    ) -> List[ScrapedVersion]:
+        """Version list built from APKMirror's app_exists API, which Cloudflare
+        doesn't challenge. Only the latest release is known for sure; other
+        supported versions are guessed release-page URLs (the browser shows
+        APKMirror's 404 if one doesn't exist)."""
+        supported = supported_versions or []
+        try:
+            r = requests.post(
+                APP_EXISTS_URL, headers=APP_EXISTS_HEADERS, json={"pnames": [pkg_name]}, timeout=15
+            )
+            if r.status_code != 200:
+                return []
+            entries = r.json().get("data", [])
+        except Exception:
+            return []
+
+        entry = next((e for e in entries if e.get("pname") == pkg_name and e.get("exists")), None)
+        if not entry:
+            return []
+        release = entry.get("release") or {}
+        latest = (release.get("version") or "").strip()
+        release_link = release.get("link") or ""
+        if not latest or not release_link:
+            return []
+
+        result = [
+            ScrapedVersion(
+                latest,
+                "[RECOMMENDED]" if latest in supported else "[STABLE]",
+                self._pick_variant_url(entry.get("apks") or [])
+                or urllib.parse.urljoin(APKMIRROR_BASE, release_link),
+            )
+        ]
+        dashed = latest.replace(".", "-")
+        if dashed in release_link:
+            for v in supported:
+                if v and v != latest:
+                    result.append(ScrapedVersion(
+                        v,
+                        "[RECOMMENDED]",
+                        urllib.parse.urljoin(APKMIRROR_BASE, release_link.replace(dashed, v.replace(".", "-"))),
+                    ))
+        return order_versions(result)
+
+
+def browser_download_dirs(candidates=BROWSER_DOWNLOAD_DIRS) -> List[Path]:
+    """Readable Downloads directories, deduped by resolved path
+    (~/storage/downloads is a symlink to /storage/emulated/0/Download)."""
+    dirs: List[Path] = []
+    seen = set()
+    for c in candidates:
+        try:
+            if not c.is_dir():
+                continue
+            real = c.resolve()
+            next(iter(real.iterdir()), None)
+        except OSError:
+            continue
+        if real not in seen:
+            seen.add(real)
+            dirs.append(real)
+    return dirs
+
+
+def snapshot_downloads(dirs: List[Path]) -> Dict[Path, Tuple[float, int]]:
+    """Map each .apk/.apkm in dirs to (mtime, size). Partial browser downloads
+    (.crdownload etc.) are excluded by the suffix filter."""
+    snap: Dict[Path, Tuple[float, int]] = {}
+    for d in dirs:
+        try:
+            for p in d.iterdir():
+                try:
+                    if p.suffix.lower() in _BROWSER_EXTS and p.is_file():
+                        st = p.stat()
+                        snap[p] = (st.st_mtime, st.st_size)
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return snap
+
+
+def wait_for_browser_download(
+    pkg_name: str,
+    cancel_event: threading.Event,
+    dirs: List[Path],
+    before: Dict[Path, Tuple[float, int]],
+    timeout: float = 900.0,
+    poll_interval: float = 2.0,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> Optional[ExtractedAppMeta]:
+    """Wait for a new, size-stable .apk/.apkm for pkg_name to appear in dirs.
+    Returns its metadata, or None on cancel/timeout."""
+    antisplit_mgr.ensure_aapt2()
+    start = time.monotonic()
+    deadline = start + timeout
+    last_sizes: Dict[Path, int] = {}
+    rejected = set()
+    note = ""
+    while not cancel_event.is_set() and time.monotonic() < deadline:
+        current = snapshot_downloads(dirs)
+        for p, (mtime, size) in current.items():
+            if p in rejected or before.get(p) == (mtime, size):
+                continue
+            if not (size > 0 and last_sizes.get(p) == size):
+                last_sizes[p] = size
+                continue
+            meta = antisplit_mgr.extract_metadata(p)
+            # "com.unknown.app" is extract_metadata's fallback without aapt2.
+            if meta and meta.pkg_name in (pkg_name, "com.unknown.app"):
+                return meta
+            rejected.add(p)
+            note = f"Ignored {p.name}: not {pkg_name}"
+        if status_callback:
+            m, s = divmod(int(time.monotonic() - start), 60)
+            status_callback(f"Waiting for the browser download… {m}:{s:02d}" + (f"\n{note}" if note else ""))
+        cancel_event.wait(poll_interval)
+    return None
 
 
 # Global APKMirror scraper instance
