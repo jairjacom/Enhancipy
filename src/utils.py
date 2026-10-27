@@ -410,6 +410,17 @@ def open_in_browser(url: str) -> bool:
     return code == 0
 
 
+def bring_termux_to_front() -> bool:
+    """Best effort: foreground Termux (e.g. after a browser download finished).
+    Android may refuse background activity starts; False if it did not work."""
+    if not shutil.which("am"):
+        return False
+    code, _, _ = run_command(
+        ["am", "start", "-n", "com.termux/com.termux.app.TermuxActivity"], timeout=15
+    )
+    return code == 0
+
+
 RISH_MARKER = "ENH_RISH_OK"
 _RISH_BANNER_RE = re.compile(r"(?im)^[ \t]*entering shell\.*[ \t]*\r?$\n?")
 

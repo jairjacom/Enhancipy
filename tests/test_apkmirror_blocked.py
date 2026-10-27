@@ -294,12 +294,12 @@ class TestWaitForBrowserDownload(unittest.TestCase):
 
 
 class TestAdoptBrowserDownload(_ScraperCase):
-    def test_moves_file_and_writes_data(self):
+    def test_copies_file_and_writes_data(self):
         src = self.workspace / "dl.apkm"
         src.write_bytes(b"z" * 7)
         target = self.scraper.adopt_browser_download("Instagram", "1.2.3", src, "apkm")
         self.assertEqual(target, self.workspace / "apps" / "Instagram" / "1.2.3.apkm")
-        self.assertFalse(src.exists())
+        self.assertTrue(src.exists())
         data = (target.parent / ".data").read_text()
         self.assertIn("APP_FORMAT='BUNDLE'", data)
         self.assertIn("APP_EXT='apkm'", data)
@@ -416,6 +416,7 @@ class TestBrowserHandoffEndToEnd(unittest.TestCase):
                     mock.patch.object(scraper, "fetch_browser_versions", return_value=[version]), \
                     mock.patch.object(scraper, "apps_dir", tmp / "apps"), \
                     mock.patch.object(vs, "open_in_browser", fake_open), \
+                    mock.patch.object(vs, "bring_termux_to_front", return_value=True), \
                     mock.patch.object(vs, "browser_download_dirs", return_value=[downloads]), \
                     mock.patch.object(apkmirror.antisplit_mgr, "ensure_aapt2", return_value=True), \
                     mock.patch.object(apkmirror.antisplit_mgr, "extract_metadata", return_value=meta), \
@@ -441,7 +442,7 @@ class TestBrowserHandoffEndToEnd(unittest.TestCase):
         self.assertEqual(opened, [version.url])
         self.assertEqual(apk_path, tmp / "apps" / "Instagram" / "453.0.0.55.79.apk")
         self.assertTrue(apk_path.exists())
-        self.assertFalse(dropped.exists(), "file should be moved out of Downloads")
+        self.assertTrue(dropped.exists(), "original stays in Downloads (browser-owned)")
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ from src.apkmirror import (
 from src.environment import env
 from src.config import config
 from src.theme import palette
-from src.utils import open_in_browser
+from src.utils import bring_termux_to_front, open_in_browser
 from src.tui.screens.base import BaseScreen
 from src.tui.widgets.dialogs import (
     ConfirmDialog,
@@ -341,7 +341,12 @@ class VersionSelectScreen(BaseScreen):
             )
 
     def _finish_downloaded_app(
-        self, modal: DownloadProgressModal, downloaded_file: Path, version: str, ext: str
+        self,
+        modal: DownloadProgressModal,
+        downloaded_file: Path,
+        version: str,
+        ext: str,
+        note: str = "",
     ) -> None:
         """Antisplit / optimize a downloaded app file, then proceed to patch selection.
         Runs in a worker thread."""
@@ -349,7 +354,7 @@ class VersionSelectScreen(BaseScreen):
         target_apk = downloaded_file.parent / f"{version}.apk"
 
         if ext == "apkm":
-            modal.update_message("Merging APKM bundle splits with APKEditor...")
+            modal.update_message(note + "Merging APKM bundle splits with APKEditor...")
             ok = antisplit_mgr.antisplit_apkm(downloaded_file, target_apk)
             if not ok:
                 self.app.call_from_thread(modal.safe_dismiss)
@@ -360,7 +365,7 @@ class VersionSelectScreen(BaseScreen):
                 return
         elif ext == "apk" and config.is_on("OPTIMIZE_LIBS"):
             modal.update_message(
-                "Optimizing native libraries for device architecture..."
+                note + "Optimizing native libraries for device architecture..."
             )
             antisplit_mgr.optimize_native_libs(downloaded_file)
 
@@ -491,10 +496,15 @@ class VersionSelectScreen(BaseScreen):
 
             # The real file's version wins if the user downloaded a different one.
             version = meta.version_name or selected_version.version
+            bring_termux_to_front()
             downloaded = apkmirror_scraper.adopt_browser_download(
                 app_name, version, meta.file_path, meta.extension
             )
-            self._finish_downloaded_app(modal, downloaded, version, meta.extension)
+            note = (
+                f"Copied to apps/{app_name}. The original stays in Downloads; "
+                "delete it yourself when you no longer need it.\n\n"
+            )
+            self._finish_downloaded_app(modal, downloaded, version, meta.extension, note)
         except Exception as e:
             self.app.call_from_thread(modal.safe_dismiss)
             self.app.call_from_thread(

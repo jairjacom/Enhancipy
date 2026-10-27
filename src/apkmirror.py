@@ -478,15 +478,16 @@ class APKMirrorScraper:
         (target_dir / ".data").write_text("\n".join(data_lines) + "\n", encoding="utf-8")
 
     def adopt_browser_download(self, app_name: str, version: str, src: Path, ext: str) -> Path:
-        """Move a file the user downloaded in the browser into apps/<app_name>/.
+        """Copy a file the user downloaded in the browser into apps/<app_name>/.
 
-        Moved (not copied) so a large APK isn't kept twice. OSError propagates.
+        Copied, not moved: the browser owns the file in shared storage and Termux
+        can't reliably delete it. OSError propagates.
         """
         target_dir = self.apps_dir / app_name
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / f"{version}.{ext}"
         target.unlink(missing_ok=True)
-        shutil.move(str(src), str(target))
+        shutil.copy2(src, target)
         self._write_app_data(target_dir, ext, target.stat().st_size)
         return target
 
