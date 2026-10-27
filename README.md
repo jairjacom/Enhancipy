@@ -1,19 +1,12 @@
 <div align="center">
 
-<pre>
- ___      _                 _ ___
-| __|_ _ | |_  __ _ _ _  __(_) _ \_  _
-| _|| ' \| ' \/ _` | ' \/ _| |  _/ || |
-|___|_||_|_||_\__,_|_||_\__|_|_|  \_, |
-                                  |__/
-</pre>
+<img src="docs/logo.svg" alt="EnhanciPy" width="560">
 
 **Patch Android apps right on your phone, from a terminal UI in Termux.**
 
 [![Release](https://img.shields.io/github/v/release/jairjacom/Enhancipy?label=release&color=2ea043)](https://github.com/jairjacom/Enhancipy/releases/latest)
 [![Last commit](https://img.shields.io/github/last-commit/jairjacom/Enhancipy?color=blue)](https://github.com/jairjacom/Enhancipy/commits/main)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![Telegram](https://img.shields.io/badge/Telegram-join%20the%20group-2CA5E0?logo=telegram&logoColor=white)](https://t.me/jair00den)
 
 Python-only fork of [Enhancify](https://github.com/Graywizard888/Enhancify), itself a fork of Revancify.
 
@@ -106,7 +99,11 @@ app's own instructions for enabling that).
 
 Every release is listed in [CHANGELOG.md](CHANGELOG.md).
 
-## Community
+<div align="center">
 
-Questions, bug reports and patch requests go to the Telegram group:
-[t.me/jair00den](https://t.me/jair00den).
+[![Telegram](https://img.shields.io/badge/Telegram-Join%20the%20group-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/jair00den)
+[![Latest Stable](https://img.shields.io/github/v/release/jairjacom/Enhancipy?style=for-the-badge&label=Latest%20Stable&color=2ea043)](https://github.com/jairjacom/Enhancipy/releases/latest)
+[![Stars](https://img.shields.io/github/stars/jairjacom/Enhancipy?style=for-the-badge&color=e3b341)](https://github.com/jairjacom/Enhancipy/stargazers)
+[![Open Issues](https://img.shields.io/github/issues/jairjacom/Enhancipy?style=for-the-badge&label=Open%20Issues&color=d73a4a)](https://github.com/jairjacom/Enhancipy/issues)
+
+</div>
